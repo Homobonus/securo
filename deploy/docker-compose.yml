@@ -1,0 +1,99 @@
+# Securo on a single server, from this fork's images, behind nginx on the host.
+#
+#   cp .env.example .env   # then fill it in
+#   docker compose pull && docker compose up -d
+#
+# Differs from ../docker-compose.prod.yml on purpose:
+#   - images come from SECURO_IMAGE_PREFIX (the fork's GHCR), not upstream;
+#   - only the frontend is published, and only on 127.0.0.1, so the app is
+#     reachable through the host's nginx (TLS) and nowhere else;
+#   - two proxy hops are trusted (host nginx + the frontend's nginx), so
+#     login rate limits key on the visitor's IP.
+name: securo
+
+x-backend-env: &backend-env
+  DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/securo
+  SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
+  DEBUG: "false"
+  FRONTEND_URL: ${FRONTEND_URL:?set FRONTEND_URL in .env}
+  TRUSTED_PROXY_HOPS: "2"
+  REDIS_URL: redis://redis:6379/0
+  STORAGE_LOCAL_PATH: /app/data/attachments
+  AGENTS_KNOWLEDGE_STORAGE_PATH: /app/data/agent_knowledge
+  LOCAL_AUTH_ENABLED: ${LOCAL_AUTH_ENABLED:-true}
+  WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-Securo}
+  WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-}
+  WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN:-}
+  FX_SYNC_MODE: ${FX_SYNC_MODE:-on_demand}
+  OPENEXCHANGERATES_APP_ID: ${OPENEXCHANGERATES_APP_ID:-}
+  BANK_SYNC_MIN_INTERVAL_HOURS: ${BANK_SYNC_MIN_INTERVAL_HOURS:-4}
+  TESOURO_DIRETO_ENABLED: ${TESOURO_DIRETO_ENABLED:-false}
+  ENABLE_BANKING_APP_ID: ${ENABLE_BANKING_APP_ID:-}
+  ENABLE_BANKING_PRIVATE_KEY_FILE: ${ENABLE_BANKING_PRIVATE_KEY_FILE:-/app/secrets/enable_banking_private.pem}
+  ENABLE_BANKING_API_URL: ${ENABLE_BANKING_API_URL:-https://api.enablebanking.com}
+  SIMPLEFIN_ENABLED: ${SIMPLEFIN_ENABLED:-false}
+  AGENTS_ENABLED: "false"
+
+x-backend-base: &backend-base
+  image: ${SECURO_IMAGE_PREFIX:-ghcr.io/homobonus}/securo-backend:${SECURO_TAG:-latest}
+  environment: *backend-env
+  depends_on:
+    db: { condition: service_healthy }
+    redis: { condition: service_healthy }
+  volumes:
+    - ./secrets:/app/secrets:ro
+    - attachments:/app/data/attachments
+  restart: unless-stopped
+
+services:
+  redis:
+    image: docker.io/library/redis:8-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  db:
+    image: docker.io/pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: securo
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    <<: *backend-base
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  frontend:
+    image: ${SECURO_IMAGE_PREFIX:-ghcr.io/homobonus}/securo-frontend:${SECURO_TAG:-latest}
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:8080"
+    environment:
+      BACKEND_URL: http://backend:8000
+      FRONTEND_URL: ${FRONTEND_URL}
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  celery-worker:
+    <<: *backend-base
+    # One process is plenty for one household and saves ~100 MB of RAM.
+    command: celery -A app.worker worker --loglevel=info --concurrency=1
+
+  celery-beat:
+    <<: *backend-base
+    command: celery -A app.worker beat --loglevel=info
+
+volumes:
+  pgdata:
+  attachments:

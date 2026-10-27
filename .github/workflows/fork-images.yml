@@ -1,0 +1,75 @@
+name: Fork images
+
+# Builds this fork's own images on every push to main, so a server can run
+# the fork's features without waiting for an upstream release. Upstream
+# publishes its images from release.yml and skips this workflow.
+#
+# Images: ghcr.io/<owner>/securo-backend and securo-frontend, tagged
+# `latest` and `sha-<short sha>`. Set the repository variable
+# IMAGE_PLATFORMS (Settings → Secrets and variables → Actions → Variables)
+# to e.g. "linux/amd64,linux/arm64" for an ARM server; the default is amd64.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: fork-images-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.repository_owner != 'securo-finance'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [backend, frontend]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Image name
+        id: image
+        # Registry paths must be lowercase; GitHub owners need not be.
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/securo-${{ matrix.component }}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        if: contains(vars.IMAGE_PLATFORMS, 'arm')
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: ./${{ matrix.component }}
+          file: ./${{ matrix.component }}/Dockerfile
+          platforms: ${{ vars.IMAGE_PLATFORMS || 'linux/amd64' }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
