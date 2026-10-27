@@ -223,13 +223,13 @@ async def sync_connection(
     deadline = time.monotonic() + time_budget if time_budget else None
     consecutive_failures = 0
 
-    def save_progress() -> None:
+    def save_progress(current_tokens: dict) -> None:
         connection.settings = {
             **settings,
             "backfill_complete": backfill_complete,
             "failed_receipts": attempts,
         }
-        _write_credentials(connection, {**credentials, "tokens": client.credentials})
+        _write_credentials(connection, {**credentials, "tokens": current_tokens})
 
     try:
         async with new_http_client(transport) as http:
@@ -279,7 +279,7 @@ async def sync_connection(
                     result.created += 1
                 else:
                     result.updated += 1
-                save_progress()
+                save_progress(client.credentials)
                 await session.commit()
             if not result.has_more:
                 backfill_complete = True
@@ -295,7 +295,7 @@ async def sync_connection(
     if client is not None and connection.status != "reauth_required":
         # Refresh tokens rotate: the one used to start this sync may
         # already be spent, even when the sync itself failed later.
-        save_progress()
+        save_progress(client.credentials)
     connection.last_sync_at = datetime.now(timezone.utc)
     # Pair everything still unpaired, not just today's receipts: the bank
     # transaction for last week's shopping may only have arrived now.

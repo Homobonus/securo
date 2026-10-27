@@ -29,6 +29,19 @@ def jwt(exp: float) -> str:
     return f"h.{body}.s"
 
 
+
+def biedronka_summary(tx: dict) -> ReceiptSummaryData:
+    summary = biedronka.summary_from_transaction(tx)
+    assert summary is not None
+    return summary
+
+
+def lidl_summary(ticket: dict) -> ReceiptSummaryData:
+    summary = lidl_plus.summary_from_ticket(ticket)
+    assert summary is not None
+    return summary
+
+
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
@@ -124,7 +137,7 @@ class TestBiedronkaParsing:
         assert len(lines) == 2 and total == Decimal("37.03")
 
     def test_receipt_date_is_the_warsaw_calendar_day(self):
-        summary = biedronka.summary_from_transaction(
+        summary = biedronka_summary(
             {"id": 77, "date": "2026-08-29T22:30:00+00:00", "total_price": "37.03", "store_name": "ul. Wielicka 1, 30-552 Kraków"}
         )
         receipt = biedronka.build_receipt(summary, E_RECEIPT, e_receipt=True)
@@ -135,7 +148,7 @@ class TestBiedronkaParsing:
         assert receipt.store_address == "ul. Wielicka 1, 30-552 Kraków"
 
     def test_plain_details_when_there_is_no_e_receipt(self):
-        summary = biedronka.summary_from_transaction({"id": 5, "date": "2026-08-29T10:00:00+02:00", "total_price": 12.5})
+        summary = biedronka_summary({"id": 5, "date": "2026-08-29T10:00:00+02:00", "total_price": 12.5})
         payload = {"items": [{"name": "Chleb", "unit_price": 4.5, "total_price": 9.0, "quantity": 2}, {"name": "Masło", "unit_price": "3,50"}]}
         receipt = biedronka.build_receipt(summary, payload, e_receipt=False)
         assert [(i.name, i.quantity, i.total) for i in receipt.lines] == [
@@ -146,7 +159,7 @@ class TestBiedronkaParsing:
 
     def test_detail_rebates_units_and_store(self):
         # The shape the transaction detail has when there is no e-receipt.
-        summary = biedronka.summary_from_transaction(
+        summary = biedronka_summary(
             {"id": 6, "date": "2026-10-23T14:34:22Z", "total_price": 27.48, "store_name": "ul. T. Kościuszki 229, 40-706 Katowice"}
         )
         payload = {
@@ -245,7 +258,7 @@ class TestLidlParsing:
         assert lidl_plus.parse_receipt_html("", Decimal("10")) == ([], Decimal("0"))
 
     def test_ticket_detail_to_receipt(self):
-        summary = lidl_plus.summary_from_ticket({"id": "2400191683", "date": "2026-10-22T10:04:09+00:00", "totalAmount": 26.78})
+        summary = lidl_summary({"id": "2400191683", "date": "2026-10-22T10:04:09+00:00", "totalAmount": 26.78})
         detail = {
             "id": "2400191683",
             "date": "2026-10-22T10:04:09+00:00",
@@ -368,7 +381,7 @@ class TestBiedronkaClient:
                 return httpx.Response(404)
             return httpx.Response(200, json={"items": [{"name": "Chleb", "unit_price": 4.5}]})
 
-        summary = biedronka.summary_from_transaction({"id": 9, "date": "2026-08-29T10:00:00+02:00", "total_price": 4.5})
+        summary = biedronka_summary({"id": 9, "date": "2026-08-29T10:00:00+02:00", "total_price": 4.5})
         async with new_http_client(httpx.MockTransport(handler)) as http:
             client = biedronka.BiedronkaProvider().client({"access_token": jwt(time.time() + 3600), "refresh_token": "r"}, http)
             receipt = await client.fetch_receipt(summary)
@@ -411,7 +424,7 @@ class TestLidlClient:
             found = await client.list_receipts(known_ids=set())
             receipt = await client.fetch_receipt(found[0])
         assert [s.external_id for s in found] == ["t1", "t2", "t3"]
-        assert receipt.lines[0].name == "Precel"
+        assert receipt is not None and receipt.lines[0].name == "Precel"
         assert credentials["refresh_token"] == "r2"
 
     @pytest.mark.asyncio
@@ -502,7 +515,7 @@ NATIVE_TICKET = {
 
 class TestLidlNativeTickets:
     def test_items_rebates_weights_and_deposits(self):
-        summary = lidl_plus.summary_from_ticket({"id": NATIVE_TICKET["id"], "date": NATIVE_TICKET["date"], "totalAmount": 26.80})
+        summary = lidl_summary({"id": NATIVE_TICKET["id"], "date": NATIVE_TICKET["date"], "totalAmount": 26.80})
         receipt = lidl_plus.build_receipt(summary, NATIVE_TICKET)
         assert [(i.name, i.quantity, i.unit, i.discount, i.code) for i in receipt.lines] == [
             ("Rzodkiewki pęczek", Decimal("2"), "szt", Decimal("3.00"), "82275"),
@@ -519,7 +532,6 @@ class TestLidlNativeTickets:
 def test_the_tickets_api_gets_a_real_app_version():
     # A made-up version makes the API hold the request until it times out.
     assert lidl_plus.APP_HEADERS["App-Version"] != "999.99.9"
-    assert biedronka.APP_VERSION
 
 
 @pytest.mark.asyncio

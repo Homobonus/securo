@@ -7,6 +7,7 @@ than none, because it hides the real one.
 """
 import time
 import uuid
+from collections.abc import Collection
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from urllib.parse import parse_qs
@@ -414,7 +415,7 @@ class TestApi:
 # ---------------------------------------------------------------------------
 # Syncing a long history
 # ---------------------------------------------------------------------------
-def dated_lidl(tickets: dict[str, str], failing: set[str] = frozenset(), page_size: int = 2):
+def dated_lidl(tickets: dict[str, str], failing: Collection[str] = (), page_size: int = 2):
     """A fake Lidl Plus with dated tickets, newest first, `page_size` per page."""
     ordered = sorted(tickets, key=lambda t: tickets[t], reverse=True)
     calls: list[str] = []
@@ -436,6 +437,10 @@ def dated_lidl(tickets: dict[str, str], failing: set[str] = frozenset(), page_si
         return httpx.Response(200, json={"id": ticket_id, "date": tickets[ticket_id], "totalAmount": 24.99, "htmlPrintedReceipt": LIDL_HTML})
 
     return handler, calls
+
+
+def settings_of(connection: RetailConnection) -> dict:
+    return connection.settings or {}
 
 
 async def lidl_connection(session, ws_id) -> RetailConnection:
@@ -468,13 +473,13 @@ class TestHistorySync:
         first = await connections.sync_connection(session, connection, transport=transport, max_receipts=2)
         assert (first.created, first.has_more) == (2, True)
         assert await stored_ids(session, ws_id) == {"t2026", "t2025"}
-        assert connection.settings["backfill_complete"] is False
+        assert settings_of(connection)["backfill_complete"] is False
 
         # The next run still reads every page, though page one holds nothing new.
         second = await connections.sync_connection(session, connection, transport=transport, max_receipts=2)
         assert (second.created, second.has_more) == (2, False)
         assert await stored_ids(session, ws_id) == set(TICKETS)
-        assert connection.settings["backfill_complete"] is True
+        assert settings_of(connection)["backfill_complete"] is True
 
     @pytest.mark.asyncio
     async def test_once_caught_up_only_new_pages_are_read(self, session, ws_id):
@@ -494,14 +499,14 @@ class TestHistorySync:
 
         result = await connections.sync_connection(session, connection, transport=transport)
         assert (result.created, result.failed, connection.status) == (3, 1, "active")
-        assert connection.settings["failed_receipts"] == {"t2023": 1}
+        assert settings_of(connection)["failed_receipts"] == {"t2023": 1}
 
         # Retried a limited number of times, then left alone.
         for _ in range(connections.MAX_ATTEMPTS_PER_RECEIPT):
-            connection.settings = {**connection.settings, "backfill_complete": False}
+            connection.settings = {**settings_of(connection), "backfill_complete": False}
             await connections.sync_connection(session, connection, transport=transport)
         calls.clear()
-        connection.settings = {**connection.settings, "backfill_complete": False}
+        connection.settings = {**settings_of(connection), "backfill_complete": False}
         await connections.sync_connection(session, connection, transport=transport)
         assert "t2023" not in calls
 

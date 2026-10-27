@@ -241,7 +241,7 @@ def parse_receipt_html(
 
     counts: Counter = Counter()
     attrs_by_key: dict[tuple, dict[str, str]] = {}
-    discounts: Counter = Counter()
+    discounts: dict[tuple, Decimal] = {}
     current: Optional[tuple] = None
     in_summary = False
     for kind, payload in parser.events:
@@ -260,7 +260,8 @@ def parse_receipt_html(
         if in_summary or current is None:
             continue
         for match in _NEGATIVE_AMOUNT.finditer(payload):
-            discounts[current] += to_decimal(match.group(1)) or Decimal("0")
+            rebate = to_decimal(match.group(1)) or Decimal("0")
+            discounts[current] = discounts.get(current, Decimal("0")) + rebate
 
     if not counts:
         return [], Decimal("0")
