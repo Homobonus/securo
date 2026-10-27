@@ -21,6 +21,7 @@ describe('MODULE_IDS', () => {
         'import',
         'invoices',
         'payees',
+        'receipts',
         'recurring',
         'reports',
         'rules',

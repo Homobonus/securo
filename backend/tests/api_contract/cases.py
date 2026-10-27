@@ -43,6 +43,7 @@ PARAM_WORLD_KEYS = {
 PARAM_WORLD_KEYS_BY_PREFIX = {
     "/api/asset-groups/": {"group_id": "asset_group_id"},
     "/api/category-groups/": {"group_id": "category_group_id"},
+    "/api/retail/connections/": {"connection_id": "retail_connection_id"},
 }
 
 # Path parameters that are not ids.
@@ -63,6 +64,7 @@ _INVOICE_LINES = [{"description": "Consulting", "quantity": 2, "unit_price": "10
 # on purpose answer a domain rule instead (a draft can't be voided, a sole
 # owner can't leave): that answer is the contract, and the baseline pins it.
 BODY_OVERRIDES: dict[tuple[str, str], Callable[[dict], Any]] = {
+    ("POST", "/api/retail/connections"): lambda w: {"provider": "lidl_plus"},
     ("POST", "/api/budgets"): lambda w: {
         "category_id": w["second_category_id"], "amount": 300, "month": "2026-05-01",
     },

@@ -29,6 +29,7 @@ PERSONAL_MODULES = [
     "goals",
     "import",
     "payees",
+    "receipts",
     "recurring",
     "reports",
     "rules",

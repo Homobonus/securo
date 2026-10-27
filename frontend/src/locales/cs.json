@@ -120,6 +120,7 @@
     "settings": "Nastavení",
     "recurring": "Opakované",
     "assets": "Aktiva",
+    "receipts": "Receipts",
     "payees": "Příjemci",
     "splitGroups": "Skupiny",
     "goals": "Cíle",
@@ -3169,6 +3170,158 @@
       "invoicesHint": "Jak určujeme, která platba vyrovnává kterou fakturu.",
       "recurring": "Pravidla opakovaných plateb",
       "recurringHint": "Jak určujeme, že odepsaná částka je účet, který jste už očekávali."
+    }
+  },
+  "receipts": {
+    "section": "Shopping",
+    "title": "Receipts",
+    "tabs": {
+      "receipts": "Receipts",
+      "products": "Products",
+      "stores": "Store accounts"
+    },
+    "errors": {
+      "generic": "Something went wrong. Please try again."
+    },
+    "connect": {
+      "title": "Connect a store",
+      "reconnectTitle": "Sign in again",
+      "description": "Securo reads your e-receipts from the store's loyalty app. The stores' login pages have a captcha, so you sign in in your own browser and paste back where it sends you.",
+      "reconnectBody": "Get a new sign-in link for {{name}}. Receipts already fetched stay.",
+      "getLink": "Get sign-in link",
+      "provider": {
+        "lidl_plus": "E-receipts from the Lidl Plus app",
+        "biedronka": "E-receipts from the Moja Biedronka app"
+      },
+      "step1": "Open the store's sign-in page in this browser:",
+      "openLogin": "Sign in",
+      "step2": "Before the last step (password or SMS code), press F12 and open the Console tab.",
+      "step3": "After signing in the browser fails to open an address starting with {{prefix}}. Copy that line from the Console (or the Location header in the Network tab) and paste it below within a minute.",
+      "mode": {
+        "redirect": "Redirect address",
+        "token": "Refresh token"
+      },
+      "redirectLabel": "Address or console line",
+      "tokenLabel": "Refresh token",
+      "redirectHint": "The whole console line is fine; Securo finds the code in it.",
+      "tokenHint": "If you already have a refresh token from another tool, paste it instead.",
+      "submit": "Connect",
+      "connected": "Connected. {{created}} receipts fetched, {{matched}} paired with transactions."
+    },
+    "connections": {
+      "empty": "No store accounts yet. Connect Lidl Plus or Moja Biedronka to fetch your e-receipts.",
+      "status": {
+        "pending": "Waiting for sign-in",
+        "active": "Active",
+        "reauth_required": "Sign in again",
+        "error": "Sync error"
+      },
+      "summary": "{{receipts}} receipts · last sync {{date}}",
+      "never": "never",
+      "matchAccount": "Account to pair with",
+      "anyAccount": "Any account",
+      "signIn": "Sign in",
+      "sync": "Sync",
+      "synced": "{{created}} new receipts, {{matched}} paired.",
+      "syncedMore": "{{created}} new receipts, {{matched}} paired. More are waiting: sync again.",
+      "reauthNeeded": "The store ended the session. Sign in again.",
+      "removed": "Store account removed. Its receipts stay.",
+      "confirmRemove": "Remove this store account? Receipts already fetched stay."
+    },
+    "list": {
+      "filter": {
+        "all": "All",
+        "unmatched": "Unpaired",
+        "matched": "Paired"
+      },
+      "searchPlaceholder": "Store or product…",
+      "autoMatch": "Pair automatically",
+      "autoMatched": "{{matched}} receipts paired.",
+      "empty": "No receipts yet. Connect a store account to fetch them.",
+      "noneFound": "No receipts match.",
+      "column": {
+        "date": "Date",
+        "store": "Store",
+        "items": "Items",
+        "payment": "Transaction",
+        "total": "Total"
+      },
+      "unpaired": "Not paired",
+      "loadMore": "Show more ({{shown}} of {{total}})"
+    },
+    "products": {
+      "filter": {
+        "all": "All",
+        "tracked": "Tracked"
+      },
+      "searchPlaceholder": "Search products…",
+      "empty": "Products appear here once receipts are fetched.",
+      "emptyTracked": "No tracked products. Open a product and turn on consumption tracking, e.g. for coffee or dishwasher tablets.",
+      "column": {
+        "name": "Product",
+        "purchases": "Bought",
+        "lastPrice": "Last price",
+        "change": "Change",
+        "lastBought": "Last bought",
+        "stock": "Runs out"
+      },
+      "stock": {
+        "unknown": "Not enough data",
+        "out": "Probably used up",
+        "daysLeft": "in ~{{days}} days"
+      }
+    },
+    "detail": {
+      "payment": "Paid with",
+      "method": {
+        "auto": "paired automatically",
+        "manual": "paired by hand"
+      },
+      "link": "Pair",
+      "unlink": "Unpair",
+      "linked": "Receipt paired with the transaction.",
+      "noCandidates": "No transaction with this amount around this date.",
+      "noItems": "This receipt has no line items (e.g. an online order or a return).",
+      "column": {
+        "product": "Product",
+        "quantity": "Qty",
+        "unitPrice": "Unit price",
+        "total": "Amount"
+      },
+      "discounts": "Discounts",
+      "total": "Total"
+    },
+    "product": {
+      "back": "Back to products",
+      "unitFallback": "unit",
+      "lastPrice": "Last price",
+      "priceRange": "Price range",
+      "totalSpent": "Spent in total",
+      "purchases": "Purchases",
+      "consumption": "Consumption",
+      "consumptionHint": "Estimated from the gaps between purchases: what you bought lasted until the next purchase.",
+      "track": "Track",
+      "trackOff": "Turn tracking on to see how long this product lasts and when it runs out.",
+      "notEnoughData": "Needs purchases on at least two different days.",
+      "lasts": "One unit lasts",
+      "daysPerUnit": "{{days}} days / {{unit}}",
+      "interval": "Bought every",
+      "everyDays": "{{days}} days",
+      "monthlyCost": "Monthly cost",
+      "runsOut": "Runs out around",
+      "priceHistory": "Price history",
+      "shelfPrice": "Shelf price",
+      "paidPrice": "Paid per unit",
+      "history": "Purchases",
+      "aliases": "Names on receipts",
+      "aliasesHint": "Every printed name here counts as this product on future receipts too.",
+      "editTitle": "Edit product",
+      "notes": "Notes",
+      "merge": "Merge",
+      "mergeTitle": "Merge into {{name}}",
+      "mergeHint": "The selected products' purchases and receipt names move here, also for future receipts.",
+      "mergeSubmit": "Merge ({{selected}})",
+      "merged": "Products merged."
     }
   }
 }

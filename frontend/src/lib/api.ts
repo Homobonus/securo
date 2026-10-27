@@ -103,6 +103,15 @@ import type {
   ReconciliationRulePatch,
   ReconciliationSuggestion,
   ReconciliationHistoryEvent,
+  ReceiptDetail,
+  ReceiptList,
+  ReceiptTransaction,
+  RetailConnection,
+  RetailConnectionStarted,
+  RetailProvider,
+  RetailSyncResult,
+  ShoppingProduct,
+  ShoppingProductDetail,
 } from '@/types'
 
 const api = axios.create({
@@ -900,6 +909,119 @@ export const products = {
   },
   removePrice: async (id: string, priceId: string): Promise<Product> => {
     const { data } = await api.delete(`/products/${id}/prices/${priceId}`)
+    return data
+  },
+}
+
+/** Loyalty accounts (Lidl Plus, Moja Biedronka) e-receipts are read from. */
+export const retail = {
+  providers: async (): Promise<RetailProvider[]> => {
+    const { data } = await api.get('/retail/providers')
+    return data
+  },
+  connections: async (): Promise<RetailConnection[]> => {
+    const { data } = await api.get('/retail/connections')
+    return data
+  },
+  connect: async (provider: string, displayName?: string): Promise<RetailConnectionStarted> => {
+    const { data } = await api.post('/retail/connections', { provider, display_name: displayName })
+    return data
+  },
+  /** Finish signing in with the pasted `app://...?code=` redirect, or a refresh token. */
+  authorize: async (
+    id: string,
+    payload: { redirect_url?: string; refresh_token?: string },
+  ): Promise<RetailConnection> => {
+    const { data } = await api.post(`/retail/connections/${id}/authorize`, payload)
+    return data
+  },
+  reauthorize: async (id: string): Promise<RetailConnectionStarted> => {
+    const { data } = await api.post(`/retail/connections/${id}/reauthorize`)
+    return data
+  },
+  update: async (
+    id: string,
+    payload: { display_name?: string; match_account_id?: string | null },
+  ): Promise<RetailConnection> => {
+    const { data } = await api.patch(`/retail/connections/${id}`, payload)
+    return data
+  },
+  sync: async (id: string): Promise<RetailSyncResult> => {
+    const { data } = await api.post(`/retail/connections/${id}/sync`)
+    return data
+  },
+  remove: async (id: string): Promise<void> => {
+    await api.delete(`/retail/connections/${id}`)
+  },
+}
+
+export interface ReceiptListParams {
+  date_from?: string
+  date_to?: string
+  source?: string
+  matched?: boolean
+  q?: string
+  product_id?: string
+  transaction_id?: string
+  limit?: number
+  offset?: number
+}
+
+/** Store receipts and their pairing with bank transactions. */
+export const receipts = {
+  list: async (params: ReceiptListParams = {}): Promise<ReceiptList> => {
+    const { data } = await api.get('/receipts', { params })
+    return data
+  },
+  get: async (id: string): Promise<ReceiptDetail> => {
+    const { data } = await api.get(`/receipts/${id}`)
+    return data
+  },
+  remove: async (id: string): Promise<void> => {
+    await api.delete(`/receipts/${id}`)
+  },
+  candidates: async (id: string): Promise<ReceiptTransaction[]> => {
+    const { data } = await api.get(`/receipts/${id}/candidates`)
+    return data
+  },
+  link: async (id: string, transactionId: string): Promise<ReceiptDetail> => {
+    const { data } = await api.put(`/receipts/${id}/transaction`, { transaction_id: transactionId })
+    return data
+  },
+  unlink: async (id: string): Promise<ReceiptDetail> => {
+    const { data } = await api.delete(`/receipts/${id}/transaction`)
+    return data
+  },
+  autoMatch: async (): Promise<{ matched: number }> => {
+    const { data } = await api.post('/receipts/match')
+    return data
+  },
+}
+
+export interface ShoppingProductPayload {
+  name?: string
+  category_id?: string | null
+  track_consumption?: boolean
+  notes?: string | null
+}
+
+/** What the person buys, grouped across receipts and stores. */
+export const shoppingProducts = {
+  list: async (params?: { q?: string; tracked?: boolean; category_id?: string }): Promise<ShoppingProduct[]> => {
+    const { data } = await api.get('/shopping-products', { params })
+    return data
+  },
+  get: async (id: string): Promise<ShoppingProductDetail> => {
+    const { data } = await api.get(`/shopping-products/${id}`)
+    return data
+  },
+  update: async (id: string, payload: ShoppingProductPayload): Promise<ShoppingProductDetail> => {
+    const { data } = await api.patch(`/shopping-products/${id}`, payload)
+    return data
+  },
+  /** Fold `sourceIds` into `id`; their printed names follow on later syncs. */
+  merge: async (id: string, sourceIds: string[]): Promise<ShoppingProductDetail> => {
+    const { data } = await api.post(`/shopping-products/${id}/merge`, { source_ids: sourceIds })
     return data
   },
 }

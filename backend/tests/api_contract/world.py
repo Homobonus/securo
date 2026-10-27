@@ -109,6 +109,8 @@ STEPS: list[Step] = [
     }),
     Step("attachment_id", "POST", "/api/transactions/{transaction_id}/attachments",
          files=lambda w: {"file": ("receipt.png", PNG_BYTES, "image/png")}),
+    Step("retail_connection_id", "POST", "/api/retail/connections",
+         lambda w: {"provider": "biedronka"}, id_field="connection.id"),
     Step("agents_connection_id", "POST", "/api/agents/connections",
          lambda w: {"name": "Local LLM", "kind": "ollama", "base_url": "http://ollama:11434"}),
 ]
@@ -146,5 +148,8 @@ async def build_world(client: AsyncClient, headers: dict, fixtures: dict) -> dic
         if resp.status_code >= 300:
             world["_failed"][step.key] = f"{resp.status_code}: {resp.text[:300]}"
             continue
-        world[step.key] = resp.json().get(step.id_field)
+        value = resp.json()
+        for part in step.id_field.split("."):
+            value = value.get(part) if isinstance(value, dict) else None
+        world[step.key] = value
     return world

@@ -119,6 +119,7 @@
     "settings": "Ustawienia",
     "recurring": "Cykliczne",
     "assets": "Aktywa",
+    "receipts": "Paragony",
     "payees": "Odbiorcy",
     "splitGroups": "Grupy",
     "goals": "Cele",
@@ -3119,6 +3120,158 @@
       "invoicesHint": "Jak ustalamy, która płatność rozlicza którą fakturę.",
       "recurring": "Reguły Cyklicznych",
       "recurringHint": "Jak ustalamy, że obciążenie to rachunek, którego już oczekiwałeś."
+    }
+  },
+  "receipts": {
+    "section": "Zakupy",
+    "title": "Paragony",
+    "tabs": {
+      "receipts": "Paragony",
+      "products": "Produkty",
+      "stores": "Konta sklepowe"
+    },
+    "errors": {
+      "generic": "Coś poszło nie tak. Spróbuj ponownie."
+    },
+    "connect": {
+      "title": "Połącz sklep",
+      "reconnectTitle": "Zaloguj ponownie",
+      "description": "Securo pobiera e-paragony z aplikacji lojalnościowej sklepu. Strony logowania sklepów mają captchę, więc logujesz się we własnej przeglądarce i wklejasz adres, na który zostaniesz przekierowany.",
+      "reconnectBody": "Wygeneruj nowy link logowania dla {{name}}. Pobrane paragony zostają.",
+      "getLink": "Wygeneruj link logowania",
+      "provider": {
+        "lidl_plus": "E-paragony z aplikacji Lidl Plus",
+        "biedronka": "E-paragony z aplikacji Moja Biedronka"
+      },
+      "step1": "Otwórz stronę logowania sklepu w tej przeglądarce:",
+      "openLogin": "Zaloguj się",
+      "step2": "Przed ostatnim krokiem (hasło lub kod SMS) naciśnij F12 i otwórz zakładkę Konsola.",
+      "step3": "Po zalogowaniu przeglądarka nie otworzy adresu zaczynającego się od {{prefix}}. Skopiuj tę linię z Konsoli (albo nagłówek Location w zakładce Sieć) i wklej poniżej w ciągu minuty.",
+      "mode": {
+        "redirect": "Adres przekierowania",
+        "token": "Refresh token"
+      },
+      "redirectLabel": "Adres lub linia z konsoli",
+      "tokenLabel": "Refresh token",
+      "redirectHint": "Można wkleić całą linię z konsoli — Securo sam znajdzie w niej kod.",
+      "tokenHint": "Jeśli masz już refresh token z innego narzędzia, wklej go zamiast adresu.",
+      "submit": "Połącz",
+      "connected": "Połączono. Pobrane paragony: {{created}}, sparowane z transakcjami: {{matched}}."
+    },
+    "connections": {
+      "empty": "Brak kont sklepowych. Połącz Lidl Plus albo Moja Biedronka, aby pobierać e-paragony.",
+      "status": {
+        "pending": "Czeka na logowanie",
+        "active": "Aktywne",
+        "reauth_required": "Zaloguj ponownie",
+        "error": "Błąd synchronizacji"
+      },
+      "summary": "Paragony: {{receipts}} · ostatnia synchronizacja: {{date}}",
+      "never": "nigdy",
+      "matchAccount": "Konto do parowania",
+      "anyAccount": "Dowolne konto",
+      "signIn": "Zaloguj",
+      "sync": "Synchronizuj",
+      "synced": "Nowe paragony: {{created}}, sparowane: {{matched}}.",
+      "syncedMore": "Nowe paragony: {{created}}, sparowane: {{matched}}. Czekają kolejne — zsynchronizuj ponownie.",
+      "reauthNeeded": "Sklep zakończył sesję. Zaloguj się ponownie.",
+      "removed": "Konto sklepowe usunięte. Paragony zostają.",
+      "confirmRemove": "Usunąć to konto sklepowe? Pobrane paragony zostaną."
+    },
+    "list": {
+      "filter": {
+        "all": "Wszystkie",
+        "unmatched": "Niesparowane",
+        "matched": "Sparowane"
+      },
+      "searchPlaceholder": "Sklep lub produkt…",
+      "autoMatch": "Paruj automatycznie",
+      "autoMatched": "Sparowane paragony: {{matched}}.",
+      "empty": "Brak paragonów. Połącz konto sklepowe, aby je pobrać.",
+      "noneFound": "Brak pasujących paragonów.",
+      "column": {
+        "date": "Data",
+        "store": "Sklep",
+        "items": "Pozycje",
+        "payment": "Transakcja",
+        "total": "Suma"
+      },
+      "unpaired": "Niesparowany",
+      "loadMore": "Pokaż więcej ({{shown}} z {{total}})"
+    },
+    "products": {
+      "filter": {
+        "all": "Wszystkie",
+        "tracked": "Śledzone"
+      },
+      "searchPlaceholder": "Szukaj produktu…",
+      "empty": "Produkty pojawią się tutaj po pobraniu paragonów.",
+      "emptyTracked": "Brak śledzonych produktów. Otwórz produkt i włącz śledzenie zużycia, np. dla kawy albo kapsułek do zmywarki.",
+      "column": {
+        "name": "Produkt",
+        "purchases": "Kupiono",
+        "lastPrice": "Ostatnia cena",
+        "change": "Zmiana",
+        "lastBought": "Ostatni zakup",
+        "stock": "Skończy się"
+      },
+      "stock": {
+        "unknown": "Za mało danych",
+        "out": "Prawdopodobnie się skończył",
+        "daysLeft": "za ok. {{days}} dni"
+      }
+    },
+    "detail": {
+      "payment": "Zapłacono",
+      "method": {
+        "auto": "sparowano automatycznie",
+        "manual": "sparowano ręcznie"
+      },
+      "link": "Sparuj",
+      "unlink": "Rozłącz",
+      "linked": "Paragon sparowany z transakcją.",
+      "noCandidates": "Brak transakcji o tej kwocie w okolicach tej daty.",
+      "noItems": "Ten paragon nie ma pozycji (np. zamówienie online albo zwrot).",
+      "column": {
+        "product": "Produkt",
+        "quantity": "Ilość",
+        "unitPrice": "Cena jedn.",
+        "total": "Kwota"
+      },
+      "discounts": "Rabaty",
+      "total": "Suma"
+    },
+    "product": {
+      "back": "Wróć do produktów",
+      "unitFallback": "szt.",
+      "lastPrice": "Ostatnia cena",
+      "priceRange": "Zakres cen",
+      "totalSpent": "Wydano łącznie",
+      "purchases": "Zakupy",
+      "consumption": "Zużycie",
+      "consumptionHint": "Szacowane z odstępów między zakupami: to, co kupiłeś, wystarczyło do następnego zakupu.",
+      "track": "Śledź",
+      "trackOff": "Włącz śledzenie, aby zobaczyć, na jak długo starcza ten produkt i kiedy się skończy.",
+      "notEnoughData": "Potrzebne są zakupy z co najmniej dwóch różnych dni.",
+      "lasts": "Jedna sztuka starcza na",
+      "daysPerUnit": "{{days}} dni / {{unit}}",
+      "interval": "Kupowany co",
+      "everyDays": "{{days}} dni",
+      "monthlyCost": "Koszt miesięczny",
+      "runsOut": "Skończy się około",
+      "priceHistory": "Historia cen",
+      "shelfPrice": "Cena półkowa",
+      "paidPrice": "Zapłacono za sztukę",
+      "history": "Zakupy",
+      "aliases": "Nazwy na paragonach",
+      "aliasesHint": "Każda z tych nazw będzie liczona jako ten produkt także na przyszłych paragonach.",
+      "editTitle": "Edytuj produkt",
+      "notes": "Notatki",
+      "merge": "Scal",
+      "mergeTitle": "Scal z {{name}}",
+      "mergeHint": "Zakupy i nazwy z paragonów zaznaczonych produktów przejdą tutaj — również dla przyszłych paragonów.",
+      "mergeSubmit": "Scal ({{selected}})",
+      "merged": "Produkty scalone."
     }
   }
 }

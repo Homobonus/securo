@@ -59,6 +59,7 @@ class ModuleId(str, Enum):
     SPLIT_GROUPS = "split_groups"
     RULES = "rules"
     INVOICES = "invoices"
+    RECEIPTS = "receipts"
 
 
 @dataclass(frozen=True)
@@ -87,6 +88,9 @@ CATALOG: Mapping[ModuleId, ModuleSpec] = {
         ModuleSpec(ModuleId.SPLIT_GROUPS, default_enabled=True),
         ModuleSpec(ModuleId.RULES, default_enabled=True),
         ModuleSpec(ModuleId.INVOICES, default_enabled=False),
+        # Store e-receipts and the products on them. On by default: it
+        # shows nothing until a loyalty account is connected.
+        ModuleSpec(ModuleId.RECEIPTS, default_enabled=True),
     )
 }
 

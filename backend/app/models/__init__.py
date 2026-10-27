@@ -36,6 +36,13 @@ from app.models.invoice import (
 from app.models.invoice_attachment import InvoiceAttachment
 from app.models.invoice_schedule import InvoiceSchedule, InvoiceScheduleTerm
 from app.models.product import Product, ProductPrice
+from app.models.receipt import (
+    Receipt,
+    ReceiptItem,
+    RetailConnection,
+    ShoppingProduct,
+    ShoppingProductAlias,
+)
 from app.models.reconciliation import (
     ReconciliationEvent,
     ReconciliationRule,
@@ -91,6 +98,11 @@ __all__ = [
     "InvoiceScheduleTerm",
     "Product",
     "ProductPrice",
+    "Receipt",
+    "ReceiptItem",
+    "RetailConnection",
+    "ShoppingProduct",
+    "ShoppingProductAlias",
     "ReconciliationEvent",
     "ReconciliationRule",
     "ReconciliationSuggestion",

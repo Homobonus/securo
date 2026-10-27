@@ -1821,3 +1821,137 @@ export interface ReconciliationHistoryEvent {
   transaction_id?: string | null
   transaction_description?: string | null
 }
+
+// ---------------------------------------------------------------------------
+// Store receipts (Lidl Plus, Moja Biedronka)
+// ---------------------------------------------------------------------------
+export type RetailConnectionStatus = 'pending' | 'active' | 'reauth_required' | 'error'
+
+export interface RetailProvider {
+  name: string
+  display_name: string
+  /** What the store redirects to after sign-in (`app://...`). */
+  redirect_prefix: string
+}
+
+export interface RetailConnection {
+  id: string
+  provider: string
+  display_name: string | null
+  status: RetailConnectionStatus
+  last_error: string | null
+  last_sync_at: string | null
+  created_at: string
+  match_account_id: string | null
+  receipt_count: number
+}
+
+export interface RetailConnectionStarted {
+  connection: RetailConnection
+  auth_url: string
+}
+
+export interface RetailSyncResult {
+  created: number
+  updated: number
+  matched: number
+  has_more: boolean
+  connection: RetailConnection
+}
+
+export interface ReceiptTransaction {
+  id: string
+  account_id: string
+  description: string
+  amount: string
+  currency: string
+  date: string
+}
+
+export interface ReceiptItem {
+  id: string
+  position: number
+  name: string
+  code: string | null
+  quantity: string
+  unit: string | null
+  unit_price: string
+  total: string
+  discount: string
+  product_id: string | null
+  product_name: string | null
+}
+
+export interface Receipt {
+  id: string
+  source: string
+  connection_id: string | null
+  external_id: string
+  purchased_at: string | null
+  date: string
+  store_name: string | null
+  store_address: string | null
+  total: string
+  discount_total: string
+  currency: string
+  transaction_id: string | null
+  match_method: 'auto' | 'manual' | null
+  transaction: ReceiptTransaction | null
+  item_count: number
+}
+
+export interface ReceiptDetail extends Receipt {
+  items: ReceiptItem[]
+}
+
+export interface ReceiptList {
+  items: Receipt[]
+  total: number
+}
+
+export interface ShoppingConsumption {
+  purchase_count: number
+  avg_days_between: number | null
+  /** How many days one unit (piece, kilogram) lasts. */
+  days_per_unit: number | null
+  units_per_month: number | null
+  monthly_cost: string | null
+  estimated_depletion: string | null
+  days_left: number | null
+}
+
+export interface ShoppingProduct {
+  id: string
+  name: string
+  category_id: string | null
+  track_consumption: boolean
+  notes: string | null
+  purchase_count: number
+  total_quantity: string
+  unit: string | null
+  total_spent: string
+  first_purchased_at: string | null
+  last_purchased_at: string | null
+  last_unit_price: string | null
+  min_unit_price: string | null
+  max_unit_price: string | null
+  price_change_pct: number | null
+  sources: string[]
+  consumption: ShoppingConsumption | null
+}
+
+export interface ShoppingPricePoint {
+  receipt_id: string
+  date: string
+  unit_price: string
+  effective_unit_price: string
+  quantity: string
+  unit: string | null
+  store_name: string | null
+  source: string
+}
+
+export interface ShoppingProductDetail extends ShoppingProduct {
+  aliases: { id: string; source: string; name: string }[]
+  price_history: ShoppingPricePoint[]
+}

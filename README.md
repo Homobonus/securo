@@ -56,6 +56,7 @@ Open [http://localhost:3000](http://localhost:3000) and create an account. That'
 - Multi-user support with admin panel and registration controls
 - Two-factor authentication (TOTP) with brute-force protection
 - OIDC login support for Authentik, Pocket ID, and other standard providers
+- Store e-receipts (Lidl Plus, Moja Biedronka): receipts paired with bank transactions, per-product price history and consumption forecasts
 - AI Agents (optional): self-hosted LLM chat with tool-use over your data, plus a per-agent RAG knowledge base
 
 ## Bank Sync (Optional)
@@ -97,6 +98,14 @@ SIMPLEFIN_API_URL=https://beta-bridge.simplefin.org   # sandbox; use bridge.simp
 ```
 
 Then in Securo: **Accounts → Connect Bank → SimpleFIN**, and paste the token. The [developer page](https://beta-bridge.simplefin.org/info/developers) gives out free demo tokens if you want to try it without a real bank.
+
+## Store Receipts (Optional)
+
+Securo can read e-receipts from the **Lidl Plus** and **Moja Biedronka** loyalty apps (Poland), pair each receipt with the card transaction that paid for it, and group the lines into products with a price history. For consumables you choose to track (coffee, dishwasher tablets), it estimates how long one unit lasts and when the current one runs out.
+
+Nothing to configure on the server. In Securo: **Receipts → Connect a store**. Both stores put a captcha on their login page, so you sign in in your own browser: open the link Securo gives you, press F12 (Console) before the last step, and paste the `app://…?code=…` address the browser fails to open. Securo keeps a refresh token from then on and syncs every few hours.
+
+These are the stores' private mobile-app APIs, used the same way the community `lidl-plus` and Home Assistant `mojabiedronka` integrations use them. They are not covered by the stores' terms and may change without notice.
 
 ## OIDC Login (Optional)
 
