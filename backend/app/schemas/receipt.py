@@ -60,6 +60,8 @@ class RetailSyncResult(BaseModel):
     created: int
     updated: int
     matched: int
+    #: Receipts the store would not return this time; retried on later syncs.
+    failed: int = 0
     #: True when more receipts wait than one sync fetches; sync again.
     has_more: bool
     connection: RetailConnectionRead

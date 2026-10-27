@@ -198,8 +198,16 @@ def parse_e_receipt(payload: Any) -> tuple[list[ReceiptLineData], Optional[Decim
     return items, (money(total) if total is not None else None), discount_total
 
 
+_UNITS = {"szt": "szt", "opa": "szt", "kg": "kg"}
+
+
 def parse_details_items(payload: Any) -> list[ReceiptLineData]:
-    """Line items from the plain transaction detail (no e-receipt). Amounts in PLN."""
+    """Line items from the transaction detail, for receipts without an e-receipt.
+
+    Amounts are in PLN. Each item states its value before and after its
+    rebates (`total_price_without_discount`, `total_price`); the line keeps
+    the shelf value and the rebate apart, as an e-receipt does.
+    """
     items: list[ReceiptLineData] = []
     raw_items = payload.get("items") if isinstance(payload, dict) else None
     for raw in raw_items or []:
@@ -208,23 +216,43 @@ def parse_details_items(payload: Any) -> list[ReceiptLineData]:
         name = str(raw.get("name") or "").strip()
         quantity = _quantity(raw.get("quantity"))
         unit_price = to_decimal(raw.get("unit_price") or raw.get("price"))
-        line_total = to_decimal(raw.get("total_price") or raw.get("total"))
-        if not name or (unit_price is None and line_total is None):
+        paid = to_decimal(raw.get("total_price") or raw.get("total"))
+        shelf = to_decimal(raw.get("total_price_without_discount"))
+        if not name or (unit_price is None and paid is None and shelf is None):
             continue
-        if line_total is None:
-            line_total = (unit_price or Decimal("0")) * quantity
+        if shelf is None:
+            shelf = paid if paid is not None else (unit_price or Decimal("0")) * quantity
+        rebate = to_decimal(raw.get("total_discount"))
+        if rebate is None:
+            rebate = shelf - paid if paid is not None else Decimal("0")
         if unit_price is None:
-            unit_price = line_total / quantity
+            unit_price = shelf / quantity
+        measure = str(raw.get("measure_unit") or raw.get("unit") or "").strip().lower()
         items.append(
             ReceiptLineData(
                 name=name,
                 quantity=quantity,
                 unit_price=money(unit_price),
-                total=money(line_total),
-                unit=_unit(raw.get("unit"), quantity),
+                total=money(shelf),
+                discount=money(abs(rebate)),
+                unit=_UNITS.get(measure) or _unit(None, quantity),
+                code=str(raw["ean"])[:64] if raw.get("ean") else None,
             )
         )
     return items
+
+
+def _store(summary: ReceiptSummaryData, payload: Any) -> tuple[str, Optional[str]]:
+    """("Biedronka <city>", street address). The list calls the address its store name."""
+    store = payload.get("store") if isinstance(payload, dict) else None
+    if isinstance(store, dict) and (store.get("street") or store.get("city")):
+        city = str(store.get("city") or "").strip()
+        place = " ".join(p for p in (store.get("zip_code"), city) if p)
+        address = ", ".join(p for p in (store.get("street"), place) if p)
+        return (f"Biedronka {city}".strip(), address or None)
+    if summary.store_name:
+        return "Biedronka", summary.store_name
+    return "Biedronka", None
 
 
 def build_receipt(summary: ReceiptSummaryData, payload: Any, *, e_receipt: bool) -> ReceiptData:
@@ -232,7 +260,7 @@ def build_receipt(summary: ReceiptSummaryData, payload: Any, *, e_receipt: bool)
         lines, fiscal_total, discount_total = parse_e_receipt(payload)
     else:
         lines, fiscal_total = parse_details_items(payload), None
-        discount_total = Decimal("0")
+        discount_total = money(sum((i.discount for i in lines), Decimal("0")))
     total = fiscal_total if fiscal_total is not None else summary.total
     if total is None:
         total = money(sum((i.total - i.discount for i in lines), Decimal("0")))
@@ -242,13 +270,15 @@ def build_receipt(summary: ReceiptSummaryData, payload: Any, *, e_receipt: bool)
         if purchased_at and purchased_at.tzinfo
         else (purchased_at.date() if purchased_at else datetime.now(_WARSAW).date())
     )
+    store_name, store_address = _store(summary, payload)
     return ReceiptData(
         external_id=summary.external_id,
         purchased_at=purchased_at,
         date=local_date,
         total=money(total),
         currency="PLN",
-        store_name=summary.store_name or "Biedronka",
+        store_name=store_name,
+        store_address=store_address,
         discount_total=discount_total,
         lines=lines,
         raw_data={"transaction": summary.raw, "receipt": _as_json(payload)},
@@ -279,7 +309,7 @@ async def _token_request(http: httpx.AsyncClient, data: dict[str, str]) -> dict:
             headers={"User-Agent": KEYCLOAK_USER_AGENT},
         )
     except httpx.HTTPError as exc:
-        raise RetailProviderError(f"biedronka_token: {exc}") from exc
+        raise RetailProviderError(f"biedronka_token: {type(exc).__name__} {exc}".strip()) from exc
     if response.status_code >= 500:
         raise RetailProviderError(f"biedronka_token_http_{response.status_code}")
     try:
@@ -330,7 +360,7 @@ class BiedronkaClient(RetailClient):
                 f"{API_BASE}/{path.lstrip('/')}", params=params, headers=request_headers
             )
         except httpx.HTTPError as exc:
-            raise RetailProviderError(f"biedronka: {exc}") from exc
+            raise RetailProviderError(f"biedronka: {type(exc).__name__} {exc}".strip()) from exc
         if response.status_code == 401:
             if not retry:
                 raise RetailAuthError("unauthorized")
@@ -453,3 +483,11 @@ class BiedronkaProvider(RetailProvider):
 
     def client(self, credentials: dict, http: httpx.AsyncClient) -> RetailClient:
         return BiedronkaClient(credentials, http)
+
+    def receipt_from_raw(self, external_id: str, raw_data: dict) -> Optional[ReceiptData]:
+        tx = raw_data.get("transaction")
+        summary = summary_from_transaction(tx) if isinstance(tx, dict) else None
+        payload = raw_data.get("receipt")
+        if summary is None or payload is None:
+            return None
+        return build_receipt(summary, payload, e_receipt=bool(extract_lines(payload)))

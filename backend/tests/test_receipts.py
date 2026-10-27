@@ -409,3 +409,126 @@ class TestApi:
         assert receipt.total == Decimal("37.03") and receipt.discount_total == Decimal("16.98")
         assert [i.name for i in receipt.items] == ["PapierQueen8rolek", "Banany"]
         assert connection.last_sync_at is not None and connection.last_sync_at > datetime.now(timezone.utc) - timedelta(minutes=1)
+
+
+# ---------------------------------------------------------------------------
+# Syncing a long history
+# ---------------------------------------------------------------------------
+def dated_lidl(tickets: dict[str, str], failing: set[str] = frozenset(), page_size: int = 2):
+    """A fake Lidl Plus with dated tickets, newest first, `page_size` per page."""
+    ordered = sorted(tickets, key=lambda t: tickets[t], reverse=True)
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "accounts.lidl.com":
+            return httpx.Response(200, json={"access_token": "a", "refresh_token": "r", "expires_in": 3600})
+        if request.url.path == "/api/v2/PL/tickets":
+            page = int(request.url.params["pageNumber"])
+            chunk = ordered[(page - 1) * page_size : page * page_size]
+            return httpx.Response(200, json={
+                "tickets": [{"id": t, "date": tickets[t], "totalAmount": 24.99} for t in chunk],
+                "totalCount": len(ordered), "size": page_size,
+            })
+        ticket_id = request.url.path.rsplit("/", 1)[-1]
+        calls.append(ticket_id)
+        if ticket_id in failing:
+            return httpx.Response(400)
+        return httpx.Response(200, json={"id": ticket_id, "date": tickets[ticket_id], "totalAmount": 24.99, "htmlPrintedReceipt": LIDL_HTML})
+
+    return handler, calls
+
+
+async def lidl_connection(session, ws_id) -> RetailConnection:
+    connection = RetailConnection(workspace_id=ws_id, provider="lidl_plus", status="active", settings={})
+    connections._write_credentials(connection, {"tokens": {"refresh_token": "r"}})
+    session.add(connection)
+    await session.commit()
+    return connection
+
+
+async def stored_ids(session, ws_id) -> set[str]:
+    return set((await session.execute(select(Receipt.external_id).where(Receipt.workspace_id == ws_id))).scalars())
+
+
+TICKETS = {
+    "t2020": "2020-02-27T10:00:00+00:00",
+    "t2023": "2023-05-01T10:00:00+00:00",
+    "t2025": "2025-12-01T10:00:00+00:00",
+    "t2026": "2026-10-22T10:00:00+00:00",
+}
+
+
+class TestHistorySync:
+    @pytest.mark.asyncio
+    async def test_newest_receipts_come_first_and_the_rest_follows(self, session, ws_id):
+        handler, _ = dated_lidl(TICKETS)
+        connection = await lidl_connection(session, ws_id)
+        transport = httpx.MockTransport(handler)
+
+        first = await connections.sync_connection(session, connection, transport=transport, max_receipts=2)
+        assert (first.created, first.has_more) == (2, True)
+        assert await stored_ids(session, ws_id) == {"t2026", "t2025"}
+        assert connection.settings["backfill_complete"] is False
+
+        # The next run still reads every page, though page one holds nothing new.
+        second = await connections.sync_connection(session, connection, transport=transport, max_receipts=2)
+        assert (second.created, second.has_more) == (2, False)
+        assert await stored_ids(session, ws_id) == set(TICKETS)
+        assert connection.settings["backfill_complete"] is True
+
+    @pytest.mark.asyncio
+    async def test_once_caught_up_only_new_pages_are_read(self, session, ws_id):
+        handler, calls = dated_lidl(TICKETS)
+        connection = await lidl_connection(session, ws_id)
+        transport = httpx.MockTransport(handler)
+        await connections.sync_connection(session, connection, transport=transport)
+        calls.clear()
+        result = await connections.sync_connection(session, connection, transport=transport)
+        assert result.created == 0 and calls == []
+
+    @pytest.mark.asyncio
+    async def test_a_receipt_the_store_refuses_is_skipped_not_fatal(self, session, ws_id):
+        handler, calls = dated_lidl(TICKETS, failing={"t2023"})
+        connection = await lidl_connection(session, ws_id)
+        transport = httpx.MockTransport(handler)
+
+        result = await connections.sync_connection(session, connection, transport=transport)
+        assert (result.created, result.failed, connection.status) == (3, 1, "active")
+        assert connection.settings["failed_receipts"] == {"t2023": 1}
+
+        # Retried a limited number of times, then left alone.
+        for _ in range(connections.MAX_ATTEMPTS_PER_RECEIPT):
+            connection.settings = {**connection.settings, "backfill_complete": False}
+            await connections.sync_connection(session, connection, transport=transport)
+        calls.clear()
+        connection.settings = {**connection.settings, "backfill_complete": False}
+        await connections.sync_connection(session, connection, transport=transport)
+        assert "t2023" not in calls
+
+    @pytest.mark.asyncio
+    async def test_a_store_that_refuses_everything_is_an_error(self, session, ws_id):
+        many = {f"t{i}": f"2026-01-{i + 1:02d}T10:00:00+00:00" for i in range(8)}
+        handler, _ = dated_lidl(many, failing=set(many))
+        connection = await lidl_connection(session, ws_id)
+        result = await connections.sync_connection(session, connection, transport=httpx.MockTransport(handler))
+        assert connection.status == "error"
+        assert result.failed == connections.MAX_CONSECUTIVE_FAILURES
+
+
+@pytest.mark.asyncio
+async def test_stored_receipts_are_rebuilt_from_their_payload(session, ws_id, account):
+    from tests.test_retail_providers import NATIVE_TICKET
+
+    tx = await debit(session, account, date(2026, 3, 4), "26.80")
+    stale = receipt_data(NATIVE_TICKET["id"], date(2026, 3, 4), "26.80", line("old parse"))
+    stale.raw_data = {"ticket": NATIVE_TICKET}
+    receipt, _ = await svc.ingest_receipt(session, ws_id, "lidl_plus", stale)
+    await svc.link_transaction(session, receipt, tx.id)
+    await session.commit()
+
+    assert await svc.reparse_receipts(session, ws_id) == 1
+    await session.commit()
+    await session.refresh(receipt, ["items"])
+    assert [i.name for i in receipt.items][:2] == ["Rzodkiewki pęczek", "Bataty luz"]
+    assert receipt.discount_total == Decimal("4.65")
+    assert receipt.transaction_id == tx.id

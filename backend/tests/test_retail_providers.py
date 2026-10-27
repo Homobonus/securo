@@ -125,12 +125,14 @@ class TestBiedronkaParsing:
 
     def test_receipt_date_is_the_warsaw_calendar_day(self):
         summary = biedronka.summary_from_transaction(
-            {"id": 77, "date": "2026-08-29T22:30:00+00:00", "total_price": "37.03", "store_name": "Biedronka Kraków"}
+            {"id": 77, "date": "2026-08-29T22:30:00+00:00", "total_price": "37.03", "store_name": "ul. Wielicka 1, 30-552 Kraków"}
         )
         receipt = biedronka.build_receipt(summary, E_RECEIPT, e_receipt=True)
         assert receipt.date == date(2026, 8, 30)
         assert receipt.external_id == "77"
-        assert receipt.store_name == "Biedronka Kraków"
+        # The history list puts the store's address where its name would be.
+        assert receipt.store_name == "Biedronka"
+        assert receipt.store_address == "ul. Wielicka 1, 30-552 Kraków"
 
     def test_plain_details_when_there_is_no_e_receipt(self):
         summary = biedronka.summary_from_transaction({"id": 5, "date": "2026-08-29T10:00:00+02:00", "total_price": 12.5})
@@ -141,6 +143,30 @@ class TestBiedronkaParsing:
             ("Masło", Decimal("1"), Decimal("3.50")),
         ]
         assert receipt.total == Decimal("12.50")
+
+    def test_detail_rebates_units_and_store(self):
+        # The shape the transaction detail has when there is no e-receipt.
+        summary = biedronka.summary_from_transaction(
+            {"id": 6, "date": "2026-10-23T14:34:22Z", "total_price": 27.48, "store_name": "ul. T. Kościuszki 229, 40-706 Katowice"}
+        )
+        payload = {
+            "total_discount": 5.0,
+            "store": {"street": "ul. T. Kościuszki 229", "zip_code": "40-706", "city": "Katowice"},
+            "items": [
+                {"name": "WzornikKsztaltow", "quantity": 1.0, "unit_price": 24.99, "total_discount": 5.0,
+                 "total_price_without_discount": 24.99, "total_price": 19.99, "ean": "5905118875555", "measure_unit": "OPA"},
+                {"name": "Banany", "quantity": 1.248, "unit_price": 6.0, "total_discount": 0.0,
+                 "total_price_without_discount": 7.49, "total_price": 7.49, "measure_unit": "KG"},
+            ],
+        }
+        receipt = biedronka.build_receipt(summary, payload, e_receipt=False)
+        assert [(i.name, i.unit, i.total, i.discount, i.code) for i in receipt.lines] == [
+            ("WzornikKsztaltow", "szt", Decimal("24.99"), Decimal("5.00"), "5905118875555"),
+            ("Banany", "kg", Decimal("7.49"), Decimal("0.00"), None),
+        ]
+        assert receipt.discount_total == Decimal("5.00")
+        assert sum(i.total - i.discount for i in receipt.lines) == receipt.total
+        assert (receipt.store_name, receipt.store_address) == ("Biedronka Katowice", "ul. T. Kościuszki 229, 40-706 Katowice")
 
 
 # ---------------------------------------------------------------------------
@@ -399,3 +425,111 @@ class TestLidlClient:
             client = lidl_plus.LidlPlusProvider().client({"refresh_token": "r"}, http)
             with pytest.raises(RetailProviderError):
                 await client.list_receipts(known_ids=set())
+
+
+# ---------------------------------------------------------------------------
+# Lidl: the Polish printed layout and the older data-only tickets
+# ---------------------------------------------------------------------------
+def pl_article(line, art_id, name, price, quantity_text):
+    attrs = f'class="article" data-art-id="{art_id}" data-unit-price="{price}" data-tax-type="C" data-art-description="{name}"'
+    return (
+        f'<span id="purchase_list_line_{line}" {attrs}>{name}           </span>\n'
+        f'<span id="purchase_list_line_{line + 1}" {attrs}>                       {quantity_text}</span>\n'
+    )
+
+
+# The structure of a real 2026 Polish e-receipt, with made-up lines.
+PL_RECEIPT = (
+    '<html><body><pre><span class="header" data-till-country="PL">'
+    '<span id="header_line_2">Adres siedziby: Poznańska 48, Jankowice </span></span>'
+    '<span class="purchase_list"><span id="purchase_list_line_1" class="currency" data-currency="zł">2026-10-19</span>\n'
+    + pl_article(3, "0081", "Burrata z Włoch", "7,49", "1 * 7.49 7.49 C")
+    + '<span id="purchase_list_line_5" class="discount" data-promotion-id="_DISCOUNT1">   RABAT 50%                   -3,75</span>\n'
+    + pl_article(6, "0095664", "Precel z solą", "1,79", "1 * 1.79 1.79 C")
+    + pl_article(8, "0012", "Banany luz", "6,99", "0,682kg x 6.99 4.77 C")
+    + pl_article(10, "0095664", "Precel z solą", "1,79", "2 * 1.79 3.58 C")
+    + '</span><span class="vat_info"><span id="vat_info_line_3">Suma                              0,35</span></span>'
+    '<span class="purchase_summary"><span id="purchase_summary_1" class="css_big">Suma PLN</span>'
+    '<span id="purchase_summary_1" class="css_big">13,88</span>\n'
+    '<span id="purchase_summary_3">Opakowania zwrotne wydania             </span>\n'
+    '<span id="purchase_summary_4">   Kaucja PET              6 * 0.5 3.0</span>\n'
+    '<span id="purchase_summary_5">Opakowania zwrotne suma           3,00</span>\n'
+    '<span id="purchase_summary_6" class="css_big css_bold">Suma</span>'
+    '<span id="purchase_summary_6" class="css_big css_bold">16,88</span>\n'
+    '<span id="purchase_summary_7" data-tender-description="Karta płatnicza">Płatność Karta płatnicza 16,88</span>\n'
+    "</span></pre></body></html>"
+)
+
+
+class TestLidlPolishLayout:
+    def test_quantity_lines_rebates_and_deposits(self):
+        lines, discounts = lidl_plus.parse_receipt_html(PL_RECEIPT, Decimal("16.88"))
+        assert [(i.name, i.quantity, i.unit, i.total, i.discount) for i in lines] == [
+            ("Burrata z Włoch", Decimal("1"), "szt", Decimal("7.49"), Decimal("3.75")),
+            ("Precel z solą", Decimal("1"), "szt", Decimal("1.79"), Decimal("0")),
+            ("Banany luz", Decimal("0.682"), "kg", Decimal("4.77"), Decimal("0")),
+            ("Precel z solą", Decimal("2"), "szt", Decimal("3.58"), Decimal("0")),
+            ("Kaucja PET", Decimal("6"), "szt", Decimal("3.00"), Decimal("0")),
+        ]
+        assert discounts == Decimal("3.75")
+        # What was paid adds up to the penny, deposit included.
+        assert sum(i.total - i.discount for i in lines) == Decimal("16.88")
+
+    def test_article_codes_are_kept(self):
+        lines, _ = lidl_plus.parse_receipt_html(PL_RECEIPT, Decimal("16.88"))
+        assert lines[0].code == "0081"
+
+
+NATIVE_TICKET = {
+    "ticketType": "NATIVE",
+    "id": "240010578320260304189215",
+    "date": "2026-03-04T10:21:13",
+    "totalAmount": 26.80,
+    "currency": {"code": "PLN"},
+    "store": {"name": "Kraków", "address": "ul. Wielicka 1", "postalCode": "30-552", "locality": "Kraków"},
+    "itemsLine": [
+        {"currentUnitPrice": "2,99", "quantity": "2", "isWeight": False, "originalAmount": "5,98", "name": "Rzodkiewki pęczek",
+         "codeInput": "82275", "discounts": [{"description": "950_82275", "amount": "3,00"}], "deposit": None},
+        {"currentUnitPrice": "4,99", "quantity": "3,406", "isWeight": True, "originalAmount": "17,00", "name": "Bataty luz",
+         "codeInput": "80755", "discounts": [], "deposit": None},
+        {"currentUnitPrice": "5,49", "quantity": "1", "isWeight": False, "originalAmount": "5,49", "name": "Rukola 125g",
+         "codeInput": "20205775", "discounts": [{"description": "Lidl Plus rabat", "amount": "1,65"}], "deposit": None},
+        {"currentUnitPrice": "2,48", "quantity": "1", "isWeight": False, "originalAmount": "2,48", "name": "Woda 1,5l",
+         "codeInput": "590", "discounts": [], "deposit": {"description": "Kaucja PET", "amount": "0,50", "quantity": "1"}},
+    ],
+}
+
+
+class TestLidlNativeTickets:
+    def test_items_rebates_weights_and_deposits(self):
+        summary = lidl_plus.summary_from_ticket({"id": NATIVE_TICKET["id"], "date": NATIVE_TICKET["date"], "totalAmount": 26.80})
+        receipt = lidl_plus.build_receipt(summary, NATIVE_TICKET)
+        assert [(i.name, i.quantity, i.unit, i.discount, i.code) for i in receipt.lines] == [
+            ("Rzodkiewki pęczek", Decimal("2"), "szt", Decimal("3.00"), "82275"),
+            ("Bataty luz", Decimal("3.406"), "kg", Decimal("0"), "80755"),
+            ("Rukola 125g", Decimal("1"), "szt", Decimal("1.65"), "20205775"),
+            ("Woda 1,5l", Decimal("1"), "szt", Decimal("0"), "590"),
+            ("Kaucja PET", Decimal("1"), "szt", Decimal("0"), None),
+        ]
+        assert receipt.discount_total == Decimal("4.65")
+        assert sum(i.total - i.discount for i in receipt.lines) == receipt.total == Decimal("26.80")
+        assert receipt.store_name == "Kraków"
+
+
+def test_the_tickets_api_gets_a_real_app_version():
+    # A made-up version makes the API hold the request until it times out.
+    assert lidl_plus.APP_HEADERS["App-Version"] != "999.99.9"
+    assert biedronka.APP_VERSION
+
+
+@pytest.mark.asyncio
+async def test_a_timeout_names_itself():
+    def handler(request):
+        if request.url.host == "accounts.lidl.com":
+            return httpx.Response(200, json={"access_token": "a", "expires_in": 3600})
+        raise httpx.ReadTimeout("", request=request)
+
+    async with new_http_client(httpx.MockTransport(handler)) as http:
+        client = lidl_plus.LidlPlusProvider().client({"refresh_token": "r"}, http)
+        with pytest.raises(RetailProviderError, match="ReadTimeout"):
+            await client.list_receipts(known_ids=set())

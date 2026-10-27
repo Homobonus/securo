@@ -149,6 +149,42 @@ async def ingest_receipt(
     return receipt, created
 
 
+async def reparse_receipts(
+    session: AsyncSession, workspace_id: uuid.UUID, *, source: Optional[str] = None
+) -> int:
+    """Rebuild stored receipts from the payload kept with them, without the store.
+
+    For when the parser learns something new. Lines are rewritten,
+    pairings and the receipt rows themselves stay. Returns how many
+    receipts were rebuilt.
+    """
+    statement = select(
+        Receipt.source, Receipt.external_id, Receipt.raw_data, Receipt.connection_id
+    ).where(Receipt.workspace_id == workspace_id, Receipt.raw_data.is_not(None))
+    if source:
+        statement = statement.where(Receipt.source == source)
+    rebuilt = 0
+    caches: dict[str, dict[str, uuid.UUID]] = {}
+    for receipt_source, external_id, raw, connection_id in (await session.execute(statement)).all():
+        provider = get_retail_provider(receipt_source)
+        if provider is None or not isinstance(raw, dict):
+            continue
+        data = provider.receipt_from_raw(external_id, raw)
+        if data is None:
+            continue
+        await ingest_receipt(
+            session,
+            workspace_id,
+            receipt_source,
+            data,
+            connection_id=connection_id,
+            product_cache=caches.setdefault(receipt_source, {}),
+        )
+        rebuilt += 1
+    await session.flush()
+    return rebuilt
+
+
 # ---------------------------------------------------------------------------
 # Pairing with bank transactions
 # ---------------------------------------------------------------------------

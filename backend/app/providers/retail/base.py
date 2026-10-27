@@ -210,6 +210,10 @@ class RetailProvider(ABC):
     @abstractmethod
     def client(self, credentials: dict, http: httpx.AsyncClient) -> RetailClient: ...
 
+    def receipt_from_raw(self, external_id: str, raw_data: dict) -> Optional[ReceiptData]:
+        """Read a stored receipt again from the payload kept with it, offline."""
+        return None
+
 
 def new_http_client(transport: Optional[httpx.AsyncBaseTransport] = None) -> httpx.AsyncClient:
     return httpx.AsyncClient(timeout=HTTP_TIMEOUT, transport=transport, follow_redirects=False)

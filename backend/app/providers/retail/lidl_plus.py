@@ -7,13 +7,23 @@ which no headless browser gets through, so the person signs in in their
 own browser and pastes the `com.lidlplus.app://callback?code=...`
 redirect. A refresh token (`offline_access`) keeps the link alive.
 
-Receipt detail is a printable HTML document (`htmlPrintedReceipt`) whose
-article spans carry their data as attributes: `data-art-id`,
-`data-art-description`, `data-unit-price`, `data-art-quantity`. The same
-article is printed in more than one span (name line, price line), so the
-spans are counted and divided by the multiplicity the whole receipt
-shows, rather than de-duplicated by id: buying the same yoghurt twice in
-two scans is two yoghurts, not one.
+Receipt detail is a printable HTML document (`htmlPrintedReceipt`), one
+span per printed line. A Polish receipt prints every article as two
+`class="article"` spans carrying the same `data-art-*` attributes: the
+name line, then the line `1 * 5.49 5.49 C` (or `0,682kg x 6.99 4.77 C`)
+that holds the quantity and the line value. A rebate is a
+`class="discount"` line right below its article, and bottle and can
+deposits ("Kaucja PET 6 * 0.5 3.0") sit in the summary, added on top of
+the goods total. Each quantity line is one purchase, so buying the same
+yoghurt in two scans is two lines, not one de-duplicated article.
+
+Receipts without quantity lines (other countries' layouts) fall back to
+counting the article spans and dividing by the multiplicity the whole
+receipt shows.
+
+The tickets API stalls, rather than refuses, a request whose
+`App-Version` it does not recognise, so the header carries a real app
+version.
 """
 from __future__ import annotations
 
@@ -57,7 +67,9 @@ SCOPES = "openid profile offline_access lpprofile lpapis"
 COUNTRY = "PL"
 LANGUAGE = "pl"
 APP_HEADERS = {
-    "App-Version": "999.99.9",
+    # A made-up version ("999.99.9", as older clients sent) makes the
+    # tickets API hold the connection open until the client times out.
+    "App-Version": "16.45.5",
     "Operating-System": "iOs",
     "App": "com.lidl.eci.lidl.plus",
     "Accept-Language": LANGUAGE,
@@ -115,17 +127,115 @@ def _line_for(attrs: dict[str, str], copies: int) -> Optional[ReceiptLineData]:
     )
 
 
+# `1 * 5.49 5.49 C`, `0,682kg x 6.99 4.77 C`: quantity, unit price, line value, tax class.
+_QUANTITY_LINE = re.compile(
+    r"^\s*(?P<qty>-?\d+(?:[.,]\d+)?)\s*(?P<unit>kg)?\s*[*x×]\s*(?P<price>-?\d+(?:[.,]\d+)?)"
+    r"\s+(?P<total>-?\d+(?:[.,]\d+)?)\s*[A-Z]?\s*$",
+    re.IGNORECASE,
+)
+# `Kaucja PET 3   1 * 3.0 3.0`: a deposit (or a returned one) in the summary.
+_DEPOSIT_LINE = re.compile(
+    r"^\s*(?P<name>\S.*?)\s+(?P<qty>-?\d+(?:[.,]\d+)?)\s*[*x×]\s*(?P<price>-?\d+(?:[.,]\d+)?)"
+    r"\s+(?P<total>-?\d+(?:[.,]\d+)?)\s*$"
+)
+_AMOUNT = re.compile(r"-?\d+[.,]\d{2}")
+
+
+class _PrintedLines(HTMLParser):
+    """Every span with its own text and the section (`purchase_list`, ...) holding it."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.spans: list[tuple[str, dict[str, str], str]] = []
+        self._open: list[tuple[dict[str, str], list[str]]] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, Optional[str]]]) -> None:
+        if tag == "span":
+            self._open.append(({k: v or "" for k, v in attrs}, []))
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag != "span" or not self._open:
+            return
+        attrs, text = self._open.pop()
+        section = next((a["class"] for a, _ in reversed(self._open) if a.get("class")), "")
+        self.spans.append((section, attrs, "".join(text)))
+
+    def handle_data(self, data: str) -> None:
+        if self._open:
+            self._open[-1][1].append(data)
+
+
+def _parse_quantity_lines(html: str) -> Optional[list[ReceiptLineData]]:
+    """Lines from a receipt that prints quantity lines; None when it does not."""
+    parser = _PrintedLines()
+    parser.feed(html)
+    lines: list[ReceiptLineData] = []
+    deposits: list[ReceiptLineData] = []
+    for section, attrs, text in parser.spans:
+        classes = attrs.get("class", "").split()
+        if "purchase_list" in section.split():
+            if "article" in classes:
+                match = _QUANTITY_LINE.match(text)
+                if match is None:
+                    continue  # the name line; its quantity line follows
+                quantity = to_decimal(match["qty"]) or Decimal("1")
+                unit_price = to_decimal(attrs.get("data-unit-price")) or to_decimal(match["price"])
+                line_total = to_decimal(match["total"])
+                if unit_price is None or line_total is None:
+                    continue
+                weighed = bool(match["unit"]) or quantity != quantity.to_integral_value()
+                lines.append(
+                    ReceiptLineData(
+                        name=(attrs.get("data-art-description") or "").strip(),
+                        quantity=quantity,
+                        unit_price=money(unit_price),
+                        total=money(line_total),
+                        unit="kg" if weighed else "szt",
+                        code=attrs.get("data-art-id") or None,
+                    )
+                )
+            elif "discount" in classes and lines:
+                amounts = _AMOUNT.findall(text)
+                if amounts:
+                    rebate = abs(to_decimal(amounts[-1]) or Decimal("0"))
+                    lines[-1].discount = money(lines[-1].discount + rebate)
+        elif "purchase_summary" in section.split():
+            match = _DEPOSIT_LINE.match(text)
+            if match is None:
+                continue
+            quantity = to_decimal(match["qty"]) or Decimal("1")
+            unit_price = to_decimal(match["price"])
+            line_total = to_decimal(match["total"])
+            if unit_price is None or line_total is None:
+                continue
+            deposits.append(
+                ReceiptLineData(
+                    name=match["name"].strip(),
+                    quantity=quantity,
+                    unit_price=money(unit_price),
+                    total=money(line_total),
+                    unit="szt",
+                )
+            )
+    if not lines:
+        return None
+    return lines + deposits
+
+
 def parse_receipt_html(
     html: str, total: Optional[Decimal] = None
 ) -> tuple[list[ReceiptLineData], Decimal]:
     """(lines, discount total) from Lidl's printable receipt.
 
-    `total` is the amount paid, when the ticket states it. It settles how
-    many spans one printed article occupies when the counts alone allow
-    more than one reading.
+    Deposits come back as lines of their own. `total` is the amount paid,
+    when the ticket states it; for layouts without quantity lines it
+    settles how many spans one printed article occupies.
     """
     if not html:
         return [], Decimal("0")
+    printed = _parse_quantity_lines(html)
+    if printed is not None:
+        return printed, money(sum((line.discount for line in printed), Decimal("0")))
     parser = _ReceiptHTML()
     parser.feed(html)
 
@@ -188,6 +298,60 @@ def parse_receipt_html(
     return lines, discount_total
 
 
+def parse_native_items(items: list) -> tuple[list[ReceiptLineData], Decimal]:
+    """(lines, discount total) from a ticket kept as data rather than print.
+
+    Older receipts (`ticketType: NATIVE`, `isHtml: false`) list their lines
+    as `itemsLine`: unit price, quantity, the line value before rebates,
+    the barcode, and the rebates applied to the line.
+    """
+    lines: list[ReceiptLineData] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        line_total = to_decimal(item.get("originalAmount"))
+        if not name or line_total is None:
+            continue
+        quantity = to_decimal(item.get("quantity")) or Decimal("1")
+        unit_price = to_decimal(item.get("currentUnitPrice"))
+        if unit_price is None:
+            unit_price = line_total / quantity if quantity else line_total
+        rebates = sum(
+            (
+                abs(to_decimal(d.get("amount")) or Decimal("0"))
+                for d in item.get("discounts") or []
+                if isinstance(d, dict)
+            ),
+            Decimal("0"),
+        )
+        lines.append(
+            ReceiptLineData(
+                name=name,
+                quantity=quantity,
+                unit_price=money(unit_price),
+                total=money(line_total),
+                discount=money(rebates),
+                unit="kg" if item.get("isWeight") else "szt",
+                code=str(item["codeInput"])[:64] if item.get("codeInput") else None,
+            )
+        )
+        deposit = item.get("deposit")
+        if isinstance(deposit, dict) and to_decimal(deposit.get("amount")) is not None:
+            amount = to_decimal(deposit.get("amount")) or Decimal("0")
+            deposit_quantity = to_decimal(deposit.get("quantity")) or quantity
+            lines.append(
+                ReceiptLineData(
+                    name=str(deposit.get("description") or deposit.get("name") or "Kaucja").strip(),
+                    quantity=deposit_quantity,
+                    unit_price=money(amount / deposit_quantity if deposit_quantity else amount),
+                    total=money(amount),
+                    unit="szt",
+                )
+            )
+    return lines, money(sum((line.discount for line in lines), Decimal("0")))
+
+
 def _ticket(payload: Any) -> dict:
     if not isinstance(payload, dict):
         return {}
@@ -210,8 +374,12 @@ def build_receipt(summary: ReceiptSummaryData, payload: Any) -> ReceiptData:
     total = to_decimal(ticket.get("totalAmount"))
     if total is None:
         total = summary.total
-    html = ticket.get("htmlPrintedReceipt") or ticket.get("htmlReceipt") or ""
-    lines, discount_total = parse_receipt_html(html, total)
+    native = ticket.get("itemsLine")
+    if isinstance(native, list) and native:
+        lines, discount_total = parse_native_items(native)
+    else:
+        html = ticket.get("htmlPrintedReceipt") or ticket.get("htmlReceipt") or ""
+        lines, discount_total = parse_receipt_html(html, total)
     if total is None:
         total = sum((line.total - line.discount for line in lines), Decimal("0"))
     purchased_at = parse_datetime(ticket.get("date")) or summary.purchased_at
@@ -261,7 +429,7 @@ async def _token_request(http: httpx.AsyncClient, data: dict[str, str]) -> dict:
             headers={"Authorization": f"Basic {_BASIC}"},
         )
     except httpx.HTTPError as exc:
-        raise RetailProviderError(f"lidl_token: {exc}") from exc
+        raise RetailProviderError(f"lidl_token: {type(exc).__name__} {exc}".strip()) from exc
     if response.status_code >= 500:
         raise RetailProviderError(f"lidl_token_http_{response.status_code}")
     try:
@@ -305,7 +473,7 @@ class LidlPlusClient(RetailClient):
         try:
             response = await self._http.get(url, params=params, headers=headers)
         except httpx.HTTPError as exc:
-            raise RetailProviderError(f"lidl: {exc}") from exc
+            raise RetailProviderError(f"lidl: {type(exc).__name__} {exc}".strip()) from exc
         if response.status_code == 401:
             if not retry:
                 raise RetailAuthError("unauthorized")
@@ -323,6 +491,7 @@ class LidlPlusClient(RetailClient):
     ) -> list[ReceiptSummaryData]:
         found: list[ReceiptSummaryData] = []
         url = f"{TICKETS_API}/v2/{COUNTRY}/tickets"
+        # url = "https://www.lidl.pl/mre/api/v1/tickets?country=PL"
         page, last_page = 1, 1
         while page <= min(last_page, max_pages):
             payload = await self._get(url, params={"pageNumber": page, "onlyFavorite": "false"})
@@ -348,6 +517,10 @@ class LidlPlusClient(RetailClient):
         return found
 
     async def fetch_receipt(self, summary: ReceiptSummaryData) -> Optional[ReceiptData]:
+        # The app API serves every year of history (checked back to 2020).
+        # The web shop's /mre/api/v1/tickets/{id} only serves this year's
+        # receipts and wants the web session's cookies, not this token: it
+        # answers 400 to it.
         payload = await self._get(f"{TICKETS_API}/v3/{COUNTRY}/tickets/{summary.external_id}")
         if not isinstance(payload, dict):
             return None
@@ -408,3 +581,10 @@ class LidlPlusProvider(RetailProvider):
 
     def client(self, credentials: dict, http: httpx.AsyncClient) -> RetailClient:
         return LidlPlusClient(credentials, http)
+
+    def receipt_from_raw(self, external_id: str, raw_data: dict) -> Optional[ReceiptData]:
+        ticket = raw_data.get("ticket")
+        if not isinstance(ticket, dict):
+            return None
+        summary = summary_from_ticket({**ticket, "id": ticket.get("id") or external_id})
+        return build_receipt(summary, ticket) if summary else None

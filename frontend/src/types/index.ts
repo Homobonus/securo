@@ -1855,6 +1855,8 @@ export interface RetailSyncResult {
   created: number
   updated: number
   matched: number
+  /** Receipts the store would not return this time; retried on later syncs. */
+  failed: number
   has_more: boolean
   connection: RetailConnection
 }

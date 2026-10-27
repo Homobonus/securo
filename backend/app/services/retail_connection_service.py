@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -33,9 +34,18 @@ from app.services.receipt_service import ReceiptError
 
 logger = logging.getLogger(__name__)
 
-#: Detail calls per sync. A first sync of a long history is spread over
-#: several runs instead of one request that outlives every timeout.
-MAX_RECEIPTS_PER_SYNC = 60
+#: Detail calls per sync, and how long one may run. A first sync of a long
+#: history (Lidl Plus keeps years of it) is spread over several runs instead
+#: of one request that outlives every proxy timeout; the newest receipts
+#: come first, so what a person bought this week is there after the first.
+MAX_RECEIPTS_PER_SYNC = 200
+SYNC_TIME_BUDGET_SECONDS = 40.0
+
+#: A receipt whose detail the store refuses is skipped, not fatal, and
+#: given up on after this many syncs. This many refusals in a row mean the
+#: store itself is failing, and the sync stops.
+MAX_ATTEMPTS_PER_RECEIPT = 3
+MAX_CONSECUTIVE_FAILURES = 5
 
 
 @dataclass
@@ -43,6 +53,8 @@ class SyncResult:
     created: int = 0
     updated: int = 0
     matched: int = 0
+    #: Receipts whose detail the store refused this time.
+    failed: int = 0
     has_more: bool = False
 
 
@@ -172,13 +184,19 @@ async def sync_connection(
     *,
     transport: Optional[httpx.AsyncBaseTransport] = None,
     max_receipts: int = MAX_RECEIPTS_PER_SYNC,
+    time_budget: Optional[float] = SYNC_TIME_BUDGET_SECONDS,
 ) -> SyncResult:
-    """Fetch receipts the workspace does not have yet, then pair them.
+    """Fetch receipts the workspace does not have yet, newest first, then pair them.
+
+    Until the store's whole history has been imported (`backfill_complete`
+    in the settings) every page of its list is read, so receipts left over
+    by an earlier, interrupted sync are found again. After that the list is
+    read only up to the first page holding nothing new.
 
     Commits as it goes: a sync interrupted halfway keeps the receipts it
-    already stored, and the next run carries on from the store's list.
-    Status is recorded on the row whatever happens; a refused token is
-    `reauth_required`, anything else `error` and retried later.
+    already stored. Status is recorded on the row whatever happens; a
+    refused token is `reauth_required`, a store that keeps failing `error`
+    and retried later. One receipt the store will not return is skipped.
     """
     provider = _provider(connection)
     credentials = _read_credentials(connection)
@@ -186,6 +204,9 @@ async def sync_connection(
     if not tokens:
         raise ReceiptError("Connection is not signed in", 409)
 
+    settings = dict(connection.settings or {})
+    backfill_complete = bool(settings.get("backfill_complete"))
+    attempts: dict[str, int] = dict(settings.get("failed_receipts") or {})
     known = set(
         (
             await session.execute(
@@ -199,16 +220,51 @@ async def sync_connection(
     result = SyncResult()
     cache: dict[str, uuid.UUID] = {}
     client = None
+    deadline = time.monotonic() + time_budget if time_budget else None
+    consecutive_failures = 0
+
+    def save_progress() -> None:
+        connection.settings = {
+            **settings,
+            "backfill_complete": backfill_complete,
+            "failed_receipts": attempts,
+        }
+        _write_credentials(connection, {**credentials, "tokens": client.credentials})
+
     try:
         async with new_http_client(transport) as http:
             client = provider.client(tokens, http)
-            summaries = await client.list_receipts(known_ids=known)
-            missing = [s for s in summaries if s.external_id not in known]
-            # Oldest first, so an interrupted backfill leaves no gap behind.
-            missing.reverse()
-            result.has_more = len(missing) > max_receipts
-            for summary in missing[:max_receipts]:
-                data = await client.fetch_receipt(summary)
+            summaries = await client.list_receipts(
+                known_ids=known if backfill_complete else set()
+            )
+            missing = [
+                s
+                for s in summaries
+                if s.external_id not in known
+                and attempts.get(s.external_id, 0) < MAX_ATTEMPTS_PER_RECEIPT
+            ]
+            # The store lists newest first; so does this.
+            missing.sort(key=lambda s: s.purchased_at.timestamp() if s.purchased_at else 0, reverse=True)
+            processed = 0
+            for summary in missing:
+                if processed >= max_receipts or (deadline and time.monotonic() > deadline):
+                    result.has_more = True
+                    break
+                processed += 1
+                try:
+                    data = await client.fetch_receipt(summary)
+                except RetailProviderError as exc:
+                    consecutive_failures += 1
+                    attempts[summary.external_id] = attempts.get(summary.external_id, 0) + 1
+                    result.failed += 1
+                    logger.warning(
+                        "Retail sync %s: receipt %s skipped: %s", connection.id, summary.external_id, exc
+                    )
+                    if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                        raise
+                    continue
+                consecutive_failures = 0
+                attempts.pop(summary.external_id, None)
                 if data is None:
                     continue
                 _, created = await receipt_service.ingest_receipt(
@@ -223,8 +279,10 @@ async def sync_connection(
                     result.created += 1
                 else:
                     result.updated += 1
-                _write_credentials(connection, {**credentials, "tokens": client.credentials})
+                save_progress()
                 await session.commit()
+            if not result.has_more:
+                backfill_complete = True
         connection.status = "active"
         connection.last_error = None
     except RetailAuthError as exc:
@@ -237,7 +295,7 @@ async def sync_connection(
     if client is not None and connection.status != "reauth_required":
         # Refresh tokens rotate: the one used to start this sync may
         # already be spent, even when the sync itself failed later.
-        _write_credentials(connection, {**credentials, "tokens": client.credentials})
+        save_progress()
     connection.last_sync_at = datetime.now(timezone.utc)
     # Pair everything still unpaired, not just today's receipts: the bank
     # transaction for last week's shopping may only have arrived now.

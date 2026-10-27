@@ -64,6 +64,7 @@ export function RetailConnectionsPanel({
           }),
         )
       }
+      if (result.failed > 0) toast.warning(t('receipts.connections.syncFailed', { failed: result.failed }))
       refresh()
     },
     onError,

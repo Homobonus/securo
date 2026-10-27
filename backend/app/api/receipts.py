@@ -215,6 +215,7 @@ async def sync_connection(
         created=result.created,
         updated=result.updated,
         matched=result.matched,
+        failed=result.failed,
         has_more=result.has_more,
         connection=await _connection_read(session, connection),
     )

@@ -3173,10 +3173,11 @@
       "signIn": "Zaloguj",
       "sync": "Synchronizuj",
       "synced": "Nowe paragony: {{created}}, sparowane: {{matched}}.",
-      "syncedMore": "Nowe paragony: {{created}}, sparowane: {{matched}}. Czekają kolejne — zsynchronizuj ponownie.",
+      "syncedMore": "Nowe paragony: {{created}}, sparowane: {{matched}}. Starsze paragony dociągną się w tle.",
       "reauthNeeded": "Sklep zakończył sesję. Zaloguj się ponownie.",
       "removed": "Konto sklepowe usunięte. Paragony zostają.",
-      "confirmRemove": "Usunąć to konto sklepowe? Pobrane paragony zostaną."
+      "confirmRemove": "Usunąć to konto sklepowe? Pobrane paragony zostaną.",
+      "syncFailed": "Sklep nie zwrócił paragonów: {{failed}}. Spróbuję ponownie przy kolejnej synchronizacji."
     },
     "list": {
       "filter": {

@@ -14,9 +14,10 @@ from app.worker import celery_app
 logger = logging.getLogger(__name__)
 
 # Receipts are not urgent, and the stores are private APIs that notice a
-# chatty client. A first backfill longer than one sync's batch catches up
-# a batch per run.
+# chatty client. A connection still importing its history is the
+# exception: it gets a batch every hourly run until it has caught up.
 STALE_THRESHOLD = timedelta(hours=6)
+BACKFILL_BATCH = 300
 
 
 async def _sync_all() -> int:
@@ -26,15 +27,22 @@ async def _sync_all() -> int:
     try:
         cutoff = datetime.now(timezone.utc) - STALE_THRESHOLD
         async with session_maker() as session:
-            ids = (
+            rows = (
                 await session.execute(
-                    select(RetailConnection.id).where(
-                        RetailConnection.status.in_(["active", "error"]),
-                        (RetailConnection.last_sync_at < cutoff)
-                        | (RetailConnection.last_sync_at.is_(None)),
-                    )
+                    select(
+                        RetailConnection.id,
+                        RetailConnection.last_sync_at,
+                        RetailConnection.settings,
+                    ).where(RetailConnection.status.in_(["active", "error"]))
                 )
-            ).scalars().all()
+            ).all()
+        ids = [
+            connection_id
+            for connection_id, last_sync_at, settings in rows
+            if last_sync_at is None
+            or last_sync_at < cutoff
+            or not (settings or {}).get("backfill_complete")
+        ]
         for connection_id in ids:
             try:
                 async with session_maker() as session:
@@ -44,7 +52,7 @@ async def _sync_all() -> int:
                     tz = await get_workspace_timezone(session, connection.workspace_id)
                     with use_resolved_timezone(tz):
                         result = await retail_connection_service.sync_connection(
-                            session, connection
+                            session, connection, max_receipts=BACKFILL_BATCH, time_budget=None
                         )
                     logger.info(
                         "Retail sync %s: %d new, %d matched",

@@ -3080,10 +3080,11 @@
       "signIn": "Sign in",
       "sync": "Sync",
       "synced": "{{created}} new receipts, {{matched}} paired.",
-      "syncedMore": "{{created}} new receipts, {{matched}} paired. More are waiting: sync again.",
+      "syncedMore": "{{created}} new receipts, {{matched}} paired. Older receipts keep importing in the background.",
       "reauthNeeded": "The store ended the session. Sign in again.",
       "removed": "Store account removed. Its receipts stay.",
-      "confirmRemove": "Remove this store account? Receipts already fetched stay."
+      "confirmRemove": "Remove this store account? Receipts already fetched stay.",
+      "syncFailed": "The store did not return {{failed}} receipts. They will be retried on the next sync."
     },
     "list": {
       "filter": {
