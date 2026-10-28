@@ -829,3 +829,66 @@ def test_txn_fingerprint_includes_transaction_date():
     assert fp1 != fp2
 
 
+
+
+# ----- merchants printed only in the address (ING PL card payments) -----
+
+
+def _ing_card_payment(address_line: str) -> dict:
+    """The shape ING (PL) sends for a card payment: no creditor name."""
+    return {
+        "status": "BOOK",
+        "creditor": {"name": None, "postal_address": {"address_line": [address_line]}},
+        "booking_date": "2026-10-26",
+        "transaction_date": "2026-10-24",
+        "entry_reference": "D202610260000002",
+        "transaction_amount": {"amount": "118.88", "currency": "PLN"},
+        "credit_debit_indicator": "DBIT",
+        "remittance_information": ["Płatność kartą 24.10.2026 Nr karty 4246xx4588"],
+    }
+
+
+@pytest.mark.parametrize(
+    "address_line, merchant",
+    [
+        ("JMP S.A. BIEDRONKA 5703   KATOWICE", "JMP S.A. BIEDRONKA 5703"),
+        ("PIEKARNIA CIASTKARNI 04   KATOWICE", "PIEKARNIA CIASTKARNI 04"),
+        ("Spotify P486BFC0FA        Stockholm", "Spotify P486BFC0FA"),
+    ],
+)
+def test_build_transaction_reads_the_merchant_from_the_address_line(address_line, merchant):
+    tx = EnableBankingProvider()._build_transaction(
+        "acc-1", _ing_card_payment(address_line), "posted", "auto"
+    )
+    assert tx is not None
+    assert tx.payee == merchant
+    assert tx.description == f"{merchant} · Płatność kartą 24.10.2026 Nr karty 4246xx4588"
+
+
+def test_address_line_merchant_respects_the_payee_source_setting():
+    raw = _ing_card_payment("JMP S.A. BIEDRONKA 5703   KATOWICE")
+    for source in ("none", "description"):
+        tx = EnableBankingProvider()._build_transaction("acc-1", raw, "posted", source)
+        assert tx is not None
+        assert not tx.payee
+        assert tx.description.startswith("JMP S.A. BIEDRONKA 5703 · ")
+
+
+def test_a_named_counterparty_keeps_the_upstream_description():
+    raw = _ing_card_payment("ul. Długa 5   Kraków")
+    raw["creditor"]["name"] = "Example Merchant"
+    tx = EnableBankingProvider()._build_transaction("acc-1", raw, "posted", "auto")
+    assert tx is not None
+    assert tx.payee == "Example Merchant"
+    assert tx.description == "Płatność kartą 24.10.2026 Nr karty 4246xx4588"
+
+
+def test_the_address_line_does_not_change_the_fingerprint():
+    # Rows already stored without entry_reference must still match on re-sync.
+    raw = _ing_card_payment("JMP S.A. BIEDRONKA 5703   KATOWICE")
+    raw.pop("entry_reference")
+    bare = {**raw, "creditor": {"name": None}}
+    first = EnableBankingProvider()._build_transaction("acc-1", raw, "posted", "auto")
+    second = EnableBankingProvider()._build_transaction("acc-1", bare, "posted", "auto")
+    assert first is not None and second is not None
+    assert first.external_id == second.external_id

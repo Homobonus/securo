@@ -60,10 +60,24 @@ async def create_user(email: str, password: str) -> None:
         print(f"User created successfully: {email}")
 
 
+async def relabel_bank_transactions() -> None:
+    """Apply the Enable Banking provider's current reading to rows synced earlier."""
+    from app.services.bank_relabel_service import relabel_enable_banking_transactions
+
+    async with async_session_maker() as session:
+        result = await relabel_enable_banking_transactions(session)
+        await session.commit()
+    print(
+        f"Checked {result.checked} transactions: "
+        f"{result.described} descriptions and {result.payees} payees updated"
+    )
+
+
 def main() -> None:
     if len(sys.argv) < 2:
         print("Usage:")
         print("  python -m app.cli create-user <email> <password>")
+        print("  python -m app.cli relabel-bank-transactions")
         sys.exit(1)
 
     command = sys.argv[1]
@@ -76,9 +90,11 @@ def main() -> None:
         asyncio.run(create_user(email, password))
     elif command == "generate-recurring":
         asyncio.run(generate_recurring())
+    elif command == "relabel-bank-transactions":
+        asyncio.run(relabel_bank_transactions())
     else:
         print(f"Unknown command: {command}")
-        print("Available commands: create-user, generate-recurring")
+        print("Available commands: create-user, generate-recurring, relabel-bank-transactions")
         sys.exit(1)
 
 

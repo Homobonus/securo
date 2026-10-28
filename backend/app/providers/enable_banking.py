@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 import time
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
@@ -143,6 +144,54 @@ def _counterparty_name(raw: dict, party: str) -> str:
     if not isinstance(name, str) or not name.strip():
         name = raw.get(f"{party}_name")
     return name.strip() if isinstance(name, str) else ""
+
+
+# "JMP S.A. BIEDRONKA 5703   KATOWICE": a fixed-width name column, then the town.
+_ADDRESS_COLUMNS = re.compile(r"\s{2,}")
+
+
+def _address_line_name(raw: dict, party: str) -> str:
+    """A counterparty some banks print only in its postal address.
+
+    ING (PL) leaves `creditor.name` empty on card payments and writes the
+    merchant into `postal_address.address_line` as a fixed-width record:
+    the name, a run of spaces, the town. The name is the first column.
+    """
+    party_obj = raw.get(party)
+    address = party_obj.get("postal_address") if isinstance(party_obj, dict) else None
+    lines = address.get("address_line") if isinstance(address, dict) else None
+    if isinstance(lines, str):
+        lines = [lines]
+    if not isinstance(lines, list):
+        return ""
+    first = next((line.strip() for line in lines if isinstance(line, str) and line.strip()), "")
+    return _ADDRESS_COLUMNS.split(first)[0].strip() if first else ""
+
+
+def describe_transaction(raw: dict, payee_source: str = "auto") -> tuple[str, Optional[str]]:
+    """(description, payee) of an EB transaction, from the bank's payload alone.
+
+    The description is the remittance text, else the additional information,
+    else the counterparty. When a bank names the counterparty only in its
+    address (see `_address_line_name`), that name becomes the payee and also
+    leads the description, which would otherwise read "Płatność kartą ..."
+    on every card payment and say nothing about where the money went.
+    """
+    indicator = (raw.get("credit_debit_indicator") or "").upper()
+    first, second = ("creditor", "debtor") if indicator == "DBIT" else ("debtor", "creditor")
+    additional_value = raw.get("additional_information")
+    additional = additional_value.strip() if isinstance(additional_value, str) else ""
+    named = _counterparty_name(raw, first) or _counterparty_name(raw, second)
+    description = _join_remittance(raw.get("remittance_information")) or additional or named
+    payee = _extract_payee(raw, indicator, payee_source)
+    if not named:
+        merchant = _address_line_name(raw, first)
+        if merchant:
+            if merchant.casefold() not in description.casefold():
+                description = f"{merchant} · {description}" if description else merchant
+            if payee_source not in ("none", "description"):
+                payee = merchant
+    return description.strip()[:500] or "Transaction", payee
 
 
 def _txn_fingerprint(account_uid: str, raw: dict) -> str:
@@ -720,17 +769,7 @@ class EnableBankingProvider(BankProvider):
         txn_date = booking or value or _parse_iso_date(raw.get("transaction_date"))
         if not txn_date:
             return None
-        additional_value = raw.get("additional_information")
-        additional = additional_value.strip() if isinstance(additional_value, str) else ""
-        description = _join_remittance(raw.get("remittance_information")) or additional
-        if not description:
-            creditor = _counterparty_name(raw, "creditor")
-            debtor = _counterparty_name(raw, "debtor")
-            if indicator == "DBIT":
-                description = creditor or debtor or ""
-            else:
-                description = debtor or creditor or ""
-        description = description.strip()[:500] or "Transaction"
+        description, payee = describe_transaction(raw, payee_source)
         entry_ref = (raw.get("entry_reference") or "").strip()
         external_id = (
             entry_ref if entry_ref and entry_ref != "0" else _txn_fingerprint(account_uid, raw)
@@ -743,7 +782,7 @@ class EnableBankingProvider(BankProvider):
             type=txn_type,
             currency=currency,
             status=status,
-            payee=_extract_payee(raw, indicator, payee_source),
+            payee=payee,
             raw_data=raw,
         )
 
