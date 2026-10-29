@@ -191,6 +191,12 @@ class RetailProvider(ABC):
     #: person so they know what to look for.
     redirect_prefix: str = ""
 
+    #: How the person signs in. `redirect`: an OAuth sign-in whose app://
+    #: redirect is pasted back. `cookie`: the store has no app sign-in, so
+    #: the person pastes the session cookie (`redirect_prefix` names it)
+    #: from their logged-in browser; the auth URL is the store's login page.
+    auth_kind: str = "redirect"
+
     @abstractmethod
     def start_authorization(self) -> PendingAuthorization: ...
 

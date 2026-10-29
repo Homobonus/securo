@@ -3141,7 +3141,8 @@
       "getLink": "Wygeneruj link logowania",
       "provider": {
         "lidl_plus": "E-paragony z aplikacji Lidl Plus",
-        "biedronka": "E-paragony z aplikacji Moja Biedronka"
+        "biedronka": "E-paragony z aplikacji Moja Biedronka",
+        "allegro": "Zakupy z „Moje Allegro → Kupione”"
       },
       "step1": "Otwórz stronę logowania sklepu w tej przeglądarce:",
       "openLogin": "Zaloguj się",
@@ -3156,7 +3157,11 @@
       "redirectHint": "Można wkleić całą linię z konsoli — Securo sam znajdzie w niej kod.",
       "tokenHint": "Jeśli masz już refresh token z innego narzędzia, wklej go zamiast adresu.",
       "submit": "Połącz",
-      "connected": "Połączono. Pobrane paragony: {{created}}, sparowane z transakcjami: {{matched}}."
+      "connected": "Połączono. Pobrane paragony: {{created}}, sparowane z transakcjami: {{matched}}.",
+      "cookieStep2": "Po zalogowaniu naciśnij F12 → zakładka Aplikacja (w Firefoksie: Dane) → Ciasteczka → https://allegro.pl i znajdź {{name}}.",
+      "cookieStep3": "Skopiuj wartość {{name}} i wklej ją poniżej. Gdy Allegro zakończy sesję, Securo poprosi o nową.",
+      "cookieLabel": "Wartość ciasteczka {{name}}",
+      "cookieHint": "Można też wkleić cały nagłówek Cookie albo „Kopiuj jako cURL” z zakładki Sieć. Ciasteczko daje dostęp do Twojego konta Allegro: nie pokazuj go nikomu, Securo przechowuje je zaszyfrowane."
     },
     "connections": {
       "empty": "Brak kont sklepowych. Połącz Lidl Plus albo Moja Biedronka, aby pobierać e-paragony.",

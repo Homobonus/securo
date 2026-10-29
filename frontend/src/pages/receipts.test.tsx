@@ -209,6 +209,25 @@ describe('ReceiptsPage', () => {
     await waitFor(() => expect(api.retail.sync).toHaveBeenCalledWith('c1'))
   })
 
+  it('asks Allegro for the session cookie instead of a redirect', async () => {
+    api.retail.providers.mockResolvedValue([
+      { name: 'allegro', display_name: 'Allegro', redirect_prefix: 'QXLSESSID', auth_kind: 'cookie' },
+    ])
+    const allegroConnection = { ...connection, provider: 'allegro', display_name: 'Allegro', status: 'pending' as const }
+    api.retail.connect.mockResolvedValue({ connection: allegroConnection, auth_url: 'https://allegro.pl/logowanie' })
+    api.retail.authorize.mockResolvedValue({ ...allegroConnection, status: 'active' })
+    api.retail.sync.mockResolvedValue({ created: 12, updated: 0, matched: 3, failed: 0, has_more: false, connection: { ...allegroConnection, status: 'active' } })
+    const { user } = renderWithProviders(<ReceiptsPage />, { route: '/receipts' })
+
+    await user.click(await screen.findByTestId('retail-connect-button'))
+    await user.click(await screen.findByTestId('retail-provider-allegro'))
+    expect(await screen.findByText(t('receipts.connect.cookieLabel', { name: 'QXLSESSID' }))).toBeInTheDocument()
+    expect(screen.queryByText(t('receipts.connect.mode.token'))).not.toBeInTheDocument()
+    await user.type(screen.getByTestId('retail-auth-value'), 'QXLSESSID=abc')
+    await user.click(screen.getByTestId('retail-auth-submit'))
+    await waitFor(() => expect(api.retail.authorize).toHaveBeenCalledWith('c1', { redirect_url: 'QXLSESSID=abc' }))
+  })
+
   it('hides writes from viewers', async () => {
     canWrite = false
     renderWithProviders(<ReceiptsPage />, { route: '/receipts' })

@@ -6,7 +6,7 @@ server: a connection is read back with its status, never its tokens.
 import uuid
 from datetime import date
 from decimal import Decimal
-from typing import Optional, cast
+from typing import Literal, Optional, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select
@@ -96,7 +96,10 @@ async def _load_connection(
 async def list_providers(ctx: WorkspaceContext = Depends(read_ctx)):
     return [
         RetailProviderRead(
-            name=p.name, display_name=p.display_name, redirect_prefix=p.redirect_prefix
+            name=p.name,
+            display_name=p.display_name,
+            redirect_prefix=p.redirect_prefix,
+            auth_kind=cast(Literal["redirect", "cookie"], p.auth_kind),
         )
         for p in list_retail_providers()
     ]

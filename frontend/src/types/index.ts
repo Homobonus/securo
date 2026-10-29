@@ -1830,8 +1830,10 @@ export type RetailConnectionStatus = 'pending' | 'active' | 'reauth_required' | 
 export interface RetailProvider {
   name: string
   display_name: string
-  /** What the store redirects to after sign-in (`app://...`). */
+  /** What the store redirects to after sign-in (`app://...`), or the session cookie's name. */
   redirect_prefix: string
+  /** `redirect`: paste the app:// address. `cookie`: paste a session cookie from the browser. */
+  auth_kind: 'redirect' | 'cookie'
 }
 
 export interface RetailConnection {

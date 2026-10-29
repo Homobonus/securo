@@ -5,12 +5,13 @@ are public mobile-app clients, so every provider is always available.
 """
 from typing import Optional
 
+from app.providers.retail.allegro import AllegroProvider
 from app.providers.retail.base import RetailProvider
 from app.providers.retail.biedronka import BiedronkaProvider
 from app.providers.retail.lidl_plus import LidlPlusProvider
 
 _PROVIDERS: dict[str, RetailProvider] = {
-    p.name: p for p in (LidlPlusProvider(), BiedronkaProvider())
+    p.name: p for p in (LidlPlusProvider(), BiedronkaProvider(), AllegroProvider())
 }
 
 

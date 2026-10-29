@@ -15,8 +15,10 @@ class RetailProviderRead(BaseModel):
     name: str
     display_name: str
     #: What the store redirects to after sign-in, so the UI can say what
-    #: to look for in the browser.
+    #: to look for in the browser; for `cookie` sign-in, the cookie's name.
     redirect_prefix: str
+    #: `redirect` (paste the app:// address) or `cookie` (paste a session cookie).
+    auth_kind: Literal["redirect", "cookie"] = "redirect"
 
 
 class RetailConnectionRead(BaseModel):

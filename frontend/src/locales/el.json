@@ -3029,7 +3029,8 @@
       "getLink": "Get sign-in link",
       "provider": {
         "lidl_plus": "E-receipts from the Lidl Plus app",
-        "biedronka": "E-receipts from the Moja Biedronka app"
+        "biedronka": "E-receipts from the Moja Biedronka app",
+        "allegro": "Purchases from \"My Allegro → Bought\""
       },
       "step1": "Open the store's sign-in page in this browser:",
       "openLogin": "Sign in",
@@ -3044,7 +3045,11 @@
       "redirectHint": "The whole console line is fine; Securo finds the code in it.",
       "tokenHint": "If you already have a refresh token from another tool, paste it instead.",
       "submit": "Connect",
-      "connected": "Connected. {{created}} receipts fetched, {{matched}} paired with transactions."
+      "connected": "Connected. {{created}} receipts fetched, {{matched}} paired with transactions.",
+      "cookieStep2": "Once signed in, press F12 → Application tab (Firefox: Storage) → Cookies → https://allegro.pl and find {{name}}.",
+      "cookieStep3": "Copy the {{name}} value and paste it below. When Allegro ends the session, Securo asks for a new one.",
+      "cookieLabel": "{{name}} cookie value",
+      "cookieHint": "A whole Cookie header or a \"Copy as cURL\" from the Network tab works too. The cookie grants access to your Allegro account: never share it; Securo stores it encrypted."
     },
     "connections": {
       "empty": "No store accounts yet. Connect Lidl Plus or Moja Biedronka to fetch your e-receipts.",

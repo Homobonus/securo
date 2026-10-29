@@ -4,6 +4,7 @@ import type { RetailConnectionStatus, ShoppingConsumption } from '@/types'
 export const RETAIL_SOURCE_LABELS: Record<string, string> = {
   lidl_plus: 'Lidl',
   biedronka: 'Biedronka',
+  allegro: 'Allegro',
 }
 
 export function sourceLabel(source: string): string {

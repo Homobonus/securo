@@ -50,6 +50,10 @@ function ConnectFlow({ onClose, reconnect }: { onClose: () => void; reconnect: R
 
   const { data: providers } = useQuery({ queryKey: ['retail', 'providers'], queryFn: retail.providers })
 
+  const provider = providers?.find((p) => p.name === (started?.connection.provider ?? reconnect?.provider))
+  const usesCookie = provider?.auth_kind === 'cookie'
+  const cookieName = provider?.redirect_prefix ?? ''
+
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['retail'] })
     void queryClient.invalidateQueries({ queryKey: ['receipts'] })
@@ -70,7 +74,9 @@ function ConnectFlow({ onClose, reconnect }: { onClose: () => void; reconnect: R
   const finish = useMutation({
     mutationFn: async () => {
       const id = started!.connection.id
-      const payload = mode === 'token' ? { refresh_token: value.trim() } : { redirect_url: value.trim() }
+      // A pasted session cookie travels like a pasted redirect; the provider tells them apart.
+      const payload =
+        mode === 'token' && !usesCookie ? { refresh_token: value.trim() } : { redirect_url: value.trim() }
       await retail.authorize(id, payload)
       // The first sync runs right away so the person sees receipts, not an empty list.
       return retail.sync(id)
@@ -85,7 +91,6 @@ function ConnectFlow({ onClose, reconnect }: { onClose: () => void; reconnect: R
     onError,
   })
 
-  const provider = providers?.find((p) => p.name === (started?.connection.provider ?? reconnect?.provider))
 
   return (
     <DialogContent className="sm:max-w-lg" data-testid="retail-connect-dialog">
@@ -138,10 +143,20 @@ function ConnectFlow({ onClose, reconnect }: { onClose: () => void; reconnect: R
                 <ExternalLink className="h-3.5 w-3.5" />
               </a>
             </li>
-            <li>{t('receipts.connect.step2')}</li>
-            <li>{t('receipts.connect.step3', { prefix: provider?.redirect_prefix ?? 'app://' })}</li>
+            {usesCookie ? (
+              <>
+                <li>{t('receipts.connect.cookieStep2', { name: cookieName })}</li>
+                <li>{t('receipts.connect.cookieStep3', { name: cookieName })}</li>
+              </>
+            ) : (
+              <>
+                <li>{t('receipts.connect.step2')}</li>
+                <li>{t('receipts.connect.step3', { prefix: provider?.redirect_prefix ?? 'app://' })}</li>
+              </>
+            )}
           </ol>
 
+          {!usesCookie && (
           <div className="inline-flex rounded-lg border border-border bg-muted p-0.5 text-xs font-medium">
             {(['redirect', 'token'] as const).map((m) => (
               <button
@@ -157,10 +172,15 @@ function ConnectFlow({ onClose, reconnect }: { onClose: () => void; reconnect: R
               </button>
             ))}
           </div>
+          )}
 
           <div className="space-y-1.5">
             <Label htmlFor="retail-auth-value">
-              {mode === 'redirect' ? t('receipts.connect.redirectLabel') : t('receipts.connect.tokenLabel')}
+              {usesCookie
+                ? t('receipts.connect.cookieLabel', { name: cookieName })
+                : mode === 'redirect'
+                  ? t('receipts.connect.redirectLabel')
+                  : t('receipts.connect.tokenLabel')}
             </Label>
             <textarea
               id="retail-auth-value"
@@ -168,12 +188,18 @@ function ConnectFlow({ onClose, reconnect }: { onClose: () => void; reconnect: R
               onChange={(e) => setValue(e.target.value)}
               rows={4}
               spellCheck={false}
-              placeholder={mode === 'redirect' ? `${provider?.redirect_prefix ?? 'app://'}?code=…` : ''}
+              placeholder={
+                usesCookie ? `${cookieName}=…` : mode === 'redirect' ? `${provider?.redirect_prefix ?? 'app://'}?code=…` : ''
+              }
               className="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-ring"
               data-testid="retail-auth-value"
             />
             <p className="text-xs text-muted-foreground">
-              {mode === 'redirect' ? t('receipts.connect.redirectHint') : t('receipts.connect.tokenHint')}
+              {usesCookie
+                ? t('receipts.connect.cookieHint')
+                : mode === 'redirect'
+                  ? t('receipts.connect.redirectHint')
+                  : t('receipts.connect.tokenHint')}
             </p>
           </div>
         </div>
