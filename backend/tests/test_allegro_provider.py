@@ -80,6 +80,26 @@ class TestReceipt:
         assert receipt.lines[-1].name == "Dostawa i opłaty" and receipt.lines[-1].total == Decimal("8.99")
         assert sum(i.total - i.discount for i in receipt.lines) == receipt.total
 
+    def test_the_delivery_line_names_the_delivery_method(self):
+        # The shape of a real checkout: offers 42.97 + InPost 10.95 = 53.92.
+        delivery = {"name": "Allegro Paczkomaty InPost", "cost": {"amount": "10.95", "currency": "PLN"}}
+        receipt = allegro.build_receipt(
+            group(
+                "g1",
+                [order("s", [offer("Otwornica 6mm", "14.49"), offer("Otwornica 8mm", "13.99", offer_id="2"), offer("Otwornica 10mm", "14.49", offer_id="3")],
+                       delivery=delivery, totalCost={"amount": "53.92", "currency": "PLN"}, cancelled=False)],
+                totalCost={"amount": "53.92", "currency": "PLN"},
+                delivery=delivery,
+            )
+        )
+        assert receipt is not None
+        assert receipt.lines[-1].name == "Dostawa: Allegro Paczkomaty InPost"
+        assert receipt.lines[-1].total == Decimal("10.95")
+        assert receipt.total == Decimal("53.92")
+
+    def test_an_order_flagged_cancelled_is_left_out(self):
+        assert allegro.build_receipt(group("g1", [order("s", [offer("X", "1.00")], cancelled=True)])) is None
+
     def test_per_order_delivery_costs_add_up(self):
         receipt = allegro.build_receipt(
             group("g1", [
@@ -142,6 +162,20 @@ class TestClient:
             found = await allegro.AllegroClient({"cookie": "abc"}, http).list_receipts(known_ids=set())
         assert len(found) == allegro.PAGE_SIZE + 1
         assert len(calls) == 2
+
+    @pytest.mark.asyncio
+    async def test_stops_at_the_total_the_response_states(self):
+        pages = [full_page("a")]
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            offset = int(request.url.params["offset"])
+            groups = pages[0] if offset == 0 else full_page("b")
+            return httpx.Response(200, json={"orderGroups": groups, "total": allegro.PAGE_SIZE, "offset": offset})
+
+        transport = httpx.MockTransport(handler)
+        async with new_http_client(transport) as http:
+            found = await allegro.AllegroClient({"cookie": "abc"}, http).list_receipts(known_ids=set())
+        assert len(found) == allegro.PAGE_SIZE
 
     @pytest.mark.asyncio
     async def test_stops_when_the_offset_is_ignored(self):

@@ -194,8 +194,8 @@ function ReceiptsTab() {
                 <tr className="border-b border-border">
                   <th className={`${TH} pl-4 sm:pl-5 text-left w-32`}>{t('receipts.list.column.date')}</th>
                   <th className={`${TH} text-left`}>{t('receipts.list.column.store')}</th>
-                  <th className={`${TH} text-right w-20 hidden sm:table-cell`}>{t('receipts.list.column.items')}</th>
-                  <th className={`${TH} text-left hidden md:table-cell`}>{t('receipts.list.column.payment')}</th>
+                  <th className={`${TH} px-4 text-center w-24 hidden sm:table-cell`}>{t('receipts.list.column.items')}</th>
+                  <th className={`${TH} pl-4 pr-6 text-left hidden md:table-cell`}>{t('receipts.list.column.payment')}</th>
                   <th className={`${TH} pr-4 sm:pr-5 text-right w-28`}>{t('receipts.list.column.total')}</th>
                 </tr>
               </thead>
@@ -212,12 +212,17 @@ function ReceiptsTab() {
                       <div className="text-sm font-medium truncate">{receipt.store_name ?? sourceLabel(receipt.source)}</div>
                       <div className="text-xs text-muted-foreground">{sourceLabel(receipt.source)}</div>
                     </td>
-                    <td className="py-3 text-right text-xs text-muted-foreground tabular-nums hidden sm:table-cell">
+                    <td className="py-3 px-4 text-center text-xs text-muted-foreground tabular-nums hidden sm:table-cell">
                       {receipt.item_count}
                     </td>
-                    <td className="py-3 hidden md:table-cell text-xs">
+                    <td className="py-3 pl-4 pr-6 hidden md:table-cell text-xs">
                       {receipt.transaction ? (
-                        <span className="text-muted-foreground truncate">{receipt.transaction.description}</span>
+                        <span
+                          className="block max-w-xs lg:max-w-sm truncate text-muted-foreground"
+                          title={receipt.transaction.description}
+                        >
+                          {receipt.transaction.description}
+                        </span>
                       ) : (
                         <span className="text-amber-600 dark:text-amber-400">{t('receipts.list.unpaired')}</span>
                       )}

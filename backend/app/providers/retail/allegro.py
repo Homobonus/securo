@@ -125,7 +125,7 @@ def _orders(group: dict) -> list[dict]:
         if not isinstance(order, dict):
             continue
         status = str(_dig(order, ("status", "primary", "status")) or "")
-        if "CANCEL" in status.upper():
+        if order.get("cancelled") is True or "CANCEL" in status.upper():
             continue
         kept.append(order)
     return kept
@@ -187,10 +187,19 @@ def build_receipt(group: dict) -> Optional[ReceiptData]:
     discount_total = Decimal("0")
     gap = money(total - offers_value)
     if gap > 0:
-        # Paid on top of the offers: delivery and fees.
+        # Paid on top of the offers. When that is exactly the delivery, say
+        # which: "Dostawa: Allegro Paczkomaty InPost".
+        delivery_costs = [_amount(_dig(o, ("delivery", "cost"))) for o in orders]
+        delivery = sum((c for c in delivery_costs if c is not None), Decimal("0"))
+        method = _dig(orders[0], ("delivery", "name")) or _dig(group, ("delivery", "name"))
+        name = (
+            f"Dostawa: {method}"
+            if isinstance(method, str) and method.strip() and money(delivery) == gap
+            else "Dostawa i opłaty"
+        )
         lines.append(
             ReceiptLineData(
-                name="Dostawa i opłaty", quantity=Decimal("1"), unit_price=gap, total=gap, unit="szt"
+                name=name[:255], quantity=Decimal("1"), unit_price=gap, total=gap, unit="szt"
             )
         )
     elif gap < 0:
@@ -253,12 +262,13 @@ class AllegroClient(RetailClient):
         found: list[ReceiptSummaryData] = []
         seen: set[str] = set()
         for page in range(max_pages):
+            offset = page * PAGE_SIZE
             payload = await _get(
                 self._http,
                 cookie,
                 "/myorder-api/myorders",
                 3,
-                params={"limit": PAGE_SIZE, "offset": page * PAGE_SIZE},
+                params={"limit": PAGE_SIZE, "offset": offset},
             )
             groups = [
                 g for g in (payload.get("orderGroups") if isinstance(payload, dict) else None) or []
@@ -282,6 +292,10 @@ class AllegroClient(RetailClient):
                         raw=group,
                     )
                 )
+            # The response says how many purchases there are in all.
+            total = payload.get("total") if isinstance(payload, dict) else None
+            if isinstance(total, int) and offset + len(groups) >= total:
+                break
             if all(str(g["groupId"]) in known_ids for g in fresh) or len(groups) < PAGE_SIZE:
                 break
         return found
