@@ -86,6 +86,7 @@ function product(overrides: Partial<ShoppingProduct> = {}): ShoppingProduct {
     first_purchased_at: '2026-09-01',
     last_purchased_at: '2026-09-29',
     last_unit_price: '26.99',
+    last_paid_unit_price: '18.89',
     min_unit_price: '22.99',
     max_unit_price: '26.99',
     price_change_pct: 17.4,
@@ -186,6 +187,8 @@ describe('ReceiptsPage', () => {
     const rows = await screen.findAllByTestId('shopping-product-row')
     expect(within(rows[0]).getByText('Kawa ziarn.')).toBeInTheDocument()
     expect(within(rows[0]).getByText(t('receipts.products.stock.daysLeft', { days: 2 }))).toBeInTheDocument()
+    // The shelf price, and what was actually paid once the coupons came off.
+    expect(within(rows[0]).getByTestId('last-paid-price')).toHaveTextContent('18.89')
   })
 
   it('offers a new sign-in for a store that asks for one', async () => {

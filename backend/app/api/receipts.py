@@ -413,6 +413,18 @@ async def unlink_receipt(
 # ---------------------------------------------------------------------------
 # Shopping products
 # ---------------------------------------------------------------------------
+def _paid_per_unit(purchases: list[Purchase]) -> Optional[Decimal]:
+    """Paid per unit over these lines, discounts included.
+
+    Over a whole shopping day, not one line: a store may book a "second one
+    cheaper" coupon on just one of two lines of the same product.
+    """
+    quantity = sum((p.quantity for p in purchases), Decimal("0"))
+    if quantity <= 0:
+        return None
+    return (sum((p.paid for p in purchases), Decimal("0")) / quantity).quantize(Decimal("0.01"))
+
+
 def _product_read(
     product: ShoppingProduct, purchases: list[Purchase], cls=ShoppingProductRead
 ):
@@ -429,6 +441,9 @@ def _product_read(
             "first_purchased_at": first.date,
             "last_purchased_at": last.date,
             "last_unit_price": last.unit_price,
+            "last_paid_unit_price": _paid_per_unit(
+                [p for p in purchases if p.date == last.date]
+            ),
             "min_unit_price": min(prices),
             "max_unit_price": max(prices),
             "price_change_pct": (

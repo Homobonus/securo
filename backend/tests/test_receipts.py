@@ -249,6 +249,19 @@ class TestConsumption:
         assert result.estimated_depletion == date(2026, 10, 16)
 
 
+@pytest.mark.asyncio
+async def test_the_last_paid_price_counts_every_line_of_that_day(client, auth_headers, session, ws_id):
+    # "60% off the second one", booked by the store on one of the two lines.
+    await svc.ingest_receipt(session, ws_id, "lidl_plus", receipt_data(
+        "r1", date(2026, 3, 12), "97.99",
+        line("Kimbo kawa", unit_price="69.99", discount="41.99"), line("Kimbo kawa", unit_price="69.99"),
+    ))
+    await session.commit()
+    product = (await client.get("/api/shopping-products", headers=auth_headers)).json()[0]
+    assert product["last_unit_price"] == "69.99"
+    assert product["last_paid_unit_price"] == "49.00"
+
+
 # ---------------------------------------------------------------------------
 # Connections and the API
 # ---------------------------------------------------------------------------
@@ -327,6 +340,7 @@ class TestApi:
 
         products = (await client.get("/api/shopping-products", headers=auth_headers)).json()
         assert len(products) == 1 and products[0]["purchase_count"] == 2
+        assert products[0]["last_unit_price"] == products[0]["last_paid_unit_price"] == "24.99"
         product_id = products[0]["id"]
         resp = await client.patch(f"/api/shopping-products/{product_id}", headers=auth_headers, json={"track_consumption": True, "name": "Kawa"})
         assert resp.status_code == 200

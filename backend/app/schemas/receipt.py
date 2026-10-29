@@ -163,6 +163,9 @@ class ShoppingProductRead(BaseModel):
     first_purchased_at: Optional[date] = None
     last_purchased_at: Optional[date] = None
     last_unit_price: Optional[Decimal] = None
+    #: What one unit actually cost on the last purchase, after every
+    #: discount the store booked on that line (coupons, basket vouchers).
+    last_paid_unit_price: Optional[Decimal] = None
     min_unit_price: Optional[Decimal] = None
     max_unit_price: Optional[Decimal] = None
     #: Change of the shelf price from the first purchase to the last, in percent.

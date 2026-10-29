@@ -125,7 +125,15 @@ export default function ShoppingProductDetailPage() {
       />
 
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4 mb-4">
-        <Stat label={t('receipts.product.lastPrice')} value={money(product.last_unit_price)} />
+        <Stat
+          label={t('receipts.product.lastPrice')}
+          value={money(product.last_unit_price)}
+          hint={
+            product.last_paid_unit_price !== null && product.last_paid_unit_price !== product.last_unit_price
+              ? t('receipts.products.paidPerUnit', { price: money(product.last_paid_unit_price) })
+              : undefined
+          }
+        />
         <Stat
           label={t('receipts.product.priceRange')}
           value={`${money(product.min_unit_price)} – ${money(product.max_unit_price)}`}

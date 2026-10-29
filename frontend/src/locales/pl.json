@@ -3225,7 +3225,8 @@
         "unknown": "Za mało danych",
         "out": "Prawdopodobnie się skończył",
         "daysLeft": "za ok. {{days}} dni"
-      }
+      },
+      "paidPerUnit": "zapłacono {{price}} / szt."
     },
     "detail": {
       "payment": "Zapłacono",

@@ -3114,7 +3114,8 @@
         "unknown": "Not enough data",
         "out": "Probably used up",
         "daysLeft": "in ~{{days}} days"
-      }
+      },
+      "paidPerUnit": "paid {{price}} / unit"
     },
     "detail": {
       "payment": "Paid with",

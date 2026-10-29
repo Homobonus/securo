@@ -1937,6 +1937,8 @@ export interface ShoppingProduct {
   first_purchased_at: string | null
   last_purchased_at: string | null
   last_unit_price: string | null
+  /** Paid per unit on the last shopping day, after every discount. */
+  last_paid_unit_price: string | null
   min_unit_price: string | null
   max_unit_price: string | null
   price_change_pct: number | null

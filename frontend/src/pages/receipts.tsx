@@ -347,7 +347,15 @@ function ProductsTab() {
                       <td className="py-3 text-right text-xs text-muted-foreground tabular-nums hidden sm:table-cell">
                         {product.purchase_count}
                       </td>
-                      <td className="py-3 text-right text-sm tabular-nums">{money(product.last_unit_price)}</td>
+                      <td className="py-3 text-right text-sm tabular-nums">
+                        {money(product.last_unit_price)}
+                        {product.last_paid_unit_price !== null &&
+                          product.last_paid_unit_price !== product.last_unit_price && (
+                            <div className="text-[11px] text-emerald-600 dark:text-emerald-400" data-testid="last-paid-price">
+                              {t('receipts.products.paidPerUnit', { price: money(product.last_paid_unit_price) })}
+                            </div>
+                          )}
+                      </td>
                       <td className="py-3 text-right text-xs tabular-nums hidden md:table-cell">
                         {change === null || change === 0 ? (
                           <span className="text-muted-foreground">—</span>
