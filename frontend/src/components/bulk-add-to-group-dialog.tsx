@@ -106,9 +106,18 @@ function BulkAddToGroupForm({
     queryFn: () => groupsApi.list(false),
   })
 
-  const ownedGroups = useMemo(
-    () => (groups ?? []).filter((g) => g.is_owner && !g.is_archived),
-    [groups],
+  // Groups this person may put transactions into: their own, and the ones
+  // they were linked into as a member (a trip shared with them). The API
+  // accepts both; listing only owned groups told a linked member to
+  // "create a group first" for a group they could already see.
+  const selectableGroups = useMemo(
+    () =>
+      (groups ?? []).filter(
+        (g) =>
+          !g.is_archived &&
+          (g.is_owner || g.members.some((m) => !!user && m.linked_user_id === user.id)),
+      ),
+    [groups, user],
   )
 
   const createGroupMutation = useMutation({
@@ -136,7 +145,7 @@ function BulkAddToGroupForm({
 
   const showCreateGroupForm = isCreatingGroup
   const showCreateMemberForm = isAddingMember
-  const groupId = explicitGroupId ?? ownedGroups[0]?.id ?? ''
+  const groupId = explicitGroupId ?? selectableGroups[0]?.id ?? ''
 
   const { data: group } = useQuery({
     queryKey: ['groups', groupId],
@@ -255,7 +264,7 @@ function BulkAddToGroupForm({
             onChangeLinkedUserId={setNewMemberLinkedUserId}
           />
         </div>
-      ) : ownedGroups.length === 0 ? (
+      ) : selectableGroups.length === 0 ? (
         <div className="space-y-2 py-4">
           <p className="text-sm text-muted-foreground font-semibold">
             {t('splitGroups.splitNoGroups')}
@@ -301,7 +310,7 @@ function BulkAddToGroupForm({
                 value={groupId}
                 onChange={(e) => setExplicitGroupId(e.target.value)}
               >
-                {ownedGroups.map((g) => (
+                {selectableGroups.map((g) => (
                   <option key={g.id} value={g.id}>{g.name}</option>
                 ))}
               </select>
@@ -325,18 +334,21 @@ function BulkAddToGroupForm({
 
           <div className="flex items-center justify-between border-t border-border pt-3">
             <Label className="text-xs">{t('splitGroups.members')}</Label>
-            <button
-              type="button"
-              onClick={() => {
-                setIsAddingMember(true)
-                setNewMemberName('')
-                setNewMemberEmail('')
-                setNewMemberLinkedUserId(null)
-              }}
-              className="text-xs text-primary hover:underline font-medium"
-            >
-              + {t('splitGroups.addMember')}
-            </button>
+            {/* Only the group's owner manages who is in it. */}
+            {group?.is_owner && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAddingMember(true)
+                  setNewMemberName('')
+                  setNewMemberEmail('')
+                  setNewMemberLinkedUserId(null)
+                }}
+                className="text-xs text-primary hover:underline font-medium"
+              >
+                + {t('splitGroups.addMember')}
+              </button>
+            )}
           </div>
 
           {group && (
@@ -455,7 +467,7 @@ function BulkAddToGroupForm({
             </Button>
             <Button
               onClick={handleSubmit}
-              disabled={!isValid || isPending || ownedGroups.length === 0}
+              disabled={!isValid || isPending || selectableGroups.length === 0}
             >
               {t('transactions.bulkAddToGroupSubmit')}
             </Button>
