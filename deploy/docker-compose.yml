@@ -16,6 +16,9 @@ x-backend-env: &backend-env
   SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
   DEBUG: "false"
   FRONTEND_URL: ${FRONTEND_URL:?set FRONTEND_URL in .env}
+  # How long a sign-in lasts, in minutes. There is no refresh: when it runs
+  # out, the app asks to sign in again.
+  ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
   TRUSTED_PROXY_HOPS: "2"
   REDIS_URL: redis://redis:6379/0
   STORAGE_LOCAL_PATH: /app/data/attachments
