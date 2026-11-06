@@ -87,6 +87,48 @@ describe('GroupDetailPage', () => {
     expect(screen.queryByTestId('group-fx-fallback')).not.toBeInTheDocument()
   })
 
+  it('shows a linked member what she owes, netted, with a way to pay', async () => {
+    api.groups.get.mockResolvedValue({
+      ...trip,
+      is_owner: false,
+      members: [
+        { id: 'me-m', group_id: 'trip', name: 'Mikołaj', linked_user_id: 'owner', email: null, is_self: false, created_at: '' },
+        { id: 'ola-m', group_id: 'trip', name: 'Ola', linked_user_id: 'me', email: null, is_self: true, created_at: '' },
+      ],
+    })
+    // Projected onto her: she owes Mikołaj 5.12 EUR, all currencies netted.
+    api.groups.balances.mockResolvedValue({
+      group_id: 'trip',
+      self_member_id: 'ola-m',
+      default_currency: 'EUR',
+      lines: [{ member_id: 'me-m', currency: 'EUR', amount: '-5.12', amount_in_default_currency: '-5.12' }],
+      fx_fallback: false,
+    })
+    api.groups.summary.mockResolvedValue(summary())
+    renderWithProviders(<GroupDetailPage />, { path: '/groups/:id', route: '/groups/trip' })
+
+    expect(await screen.findByText(t('splitGroups.youOwe', { name: 'Mikołaj' }))).toBeInTheDocument()
+    expect(screen.getAllByText('€5.12').length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: t('splitGroups.payNow') })).toBeInTheDocument()
+  })
+
+  it('does not let a member record what someone else paid', async () => {
+    api.groups.get.mockResolvedValue({ ...trip, is_owner: false, members: [] })
+    api.groups.balances.mockResolvedValue({
+      group_id: 'trip',
+      self_member_id: 'ola-m',
+      default_currency: 'EUR',
+      lines: [{ member_id: 'me-m', currency: 'EUR', amount: '3.00', amount_in_default_currency: '3.00' }],
+      fx_fallback: false,
+    })
+    api.groups.summary.mockResolvedValue(summary())
+    renderWithProviders(<GroupDetailPage />, { path: '/groups/:id', route: '/groups/trip' })
+
+    await screen.findAllByText('€3.00')
+    expect(screen.queryByRole('button', { name: t('splitGroups.settleUp') })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: t('splitGroups.payNow') })).not.toBeInTheDocument()
+  })
+
   it('warns when some row had no exchange rate', async () => {
     api.groups.summary.mockResolvedValue(summary({ fx_fallback: true }))
     renderWithProviders(<GroupDetailPage />, { path: '/groups/:id', route: '/groups/trip' })

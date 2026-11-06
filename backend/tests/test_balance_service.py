@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
+from app.models.fx_rate import FxRate
 from app.models.transaction import Transaction
 from app.schemas.group import GroupCreate, GroupMemberCreate
 from app.schemas.group_settlement import GroupSettlementCreate
@@ -191,9 +192,12 @@ async def test_self_loan_increases_balance_owed(
 
 
 @pytest.mark.asyncio
-async def test_balances_segregated_by_currency(
+async def test_balances_in_two_currencies_add_up_in_the_group_currency(
     session: AsyncSession, test_user, test_workspace
 ):
+    """Shares are converted at their date's rate and summed into one line,
+    so debts in different currencies can net out against each other."""
+    session.add(FxRate(base_currency="USD", quote_currency="EUR", date=date.today(), rate=Decimal("0.80"), source="test"))
     group, self_m, friends = await _setup(
         session, test_user, test_workspace.id, n_others=1
     )
@@ -222,13 +226,62 @@ async def test_balances_segregated_by_currency(
         session, group.id, test_workspace.id, test_user.id
     )
     assert balances is not None
-    by_currency = {
-        ln["currency"]: ln["amount"]
-        for ln in balances["lines"]
-        if ln["member_id"] == friend.id
-    }
-    assert by_currency["USD"] == Decimal("30.00")
-    assert by_currency["EUR"] == Decimal("20.00")
+    lines = [ln for ln in balances["lines"] if ln["member_id"] == friend.id]
+    # 30 USD + 20 EUR (= 25 USD at 0.80) = 55 USD, one line.
+    assert [(ln["currency"], ln["amount"]) for ln in lines] == [("USD", Decimal("55.00"))]
+    assert balances["fx_fallback"] is False
+
+
+@pytest.mark.asyncio
+async def test_what_two_people_owe_each_other_nets_out(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A trip kept in EUR: my partner paid in EUR, I paid with a PLN card.
+    Each owes the other half; only the difference remains, in EUR, for
+    both of us."""
+    from app.models.group import GroupMember
+    from app.models.user import User
+
+    day = date.today()
+    # 1 USD = 0.80 EUR = 4.00 PLN, so 1 EUR = 5.00 PLN.
+    session.add_all([
+        FxRate(base_currency="USD", quote_currency="EUR", date=day, rate=Decimal("0.80"), source="test"),
+        FxRate(base_currency="USD", quote_currency="PLN", date=day, rate=Decimal("4.00"), source="test"),
+    ])
+    from app.models.workspace import WorkspaceMember
+
+    partner = User(id=uuid.uuid4(), email="ola@example.com", hashed_password="x", is_active=True, is_verified=True)
+    session.add(partner)
+    await session.flush()
+    session.add(WorkspaceMember(id=uuid.uuid4(), workspace_id=test_workspace.id, user_id=partner.id, role="editor"))
+    group = await group_service.create_group(
+        session, test_workspace.id, test_user.id, GroupCreate(name="Włochy", default_currency="EUR")
+    )
+    me = GroupMember(id=uuid.uuid4(), group_id=group.id, workspace_id=test_workspace.id, name="Ja", is_self=True, linked_user_id=test_user.id)
+    ola = GroupMember(id=uuid.uuid4(), group_id=group.id, workspace_id=test_workspace.id, name="Ola", linked_user_id=partner.id)
+    session.add_all([me, ola])
+    await session.flush()
+
+    my_account = await _make_account(session, test_user.id)
+    her_account = await _make_account(session, partner.id)
+    halves = TransactionSplitsInput(
+        share_type="equal",
+        splits=[TransactionSplitInput(group_member_id=me.id), TransactionSplitInput(group_member_id=ola.id)],
+    )
+    # She paid 13.82 EUR: I owe her 6.91 EUR.
+    hers = await _make_tx(session, partner.id, her_account.id, "13.82", currency="EUR")
+    await split_service.replace_splits(session, hers, halves, partner.id)
+    # I paid 17.90 PLN: she owes me 8.95 PLN = 1.79 EUR.
+    mine = await _make_tx(session, test_user.id, my_account.id, "17.90", currency="PLN")
+    await split_service.replace_splits(session, mine, halves, test_user.id)
+    await session.commit()
+
+    for viewer, other, expected in ((test_user.id, ola.id, "-5.12"), (partner.id, me.id, "5.12")):
+        balances = await balance_service.compute_balances(session, group.id, test_workspace.id, viewer)
+        assert balances is not None
+        assert [(ln["member_id"], ln["currency"], ln["amount"]) for ln in balances["lines"]] == [
+            (other, "EUR", Decimal(expected))
+        ]
 
 
 @pytest.mark.asyncio

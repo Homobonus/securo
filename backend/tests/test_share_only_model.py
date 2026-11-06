@@ -501,12 +501,11 @@ async def test_balance_line_includes_fx_converted_amount(
     assert balances["default_currency"] == "USD"
     assert len(balances["lines"]) == 1
     line = balances["lines"][0]
-    assert line["currency"] == "EUR"
-    assert Decimal(str(line["amount"])) == Decimal("100.00")
-    # 100 EUR / 0.85 ≈ 117.65 USD
-    assert Decimal(str(line["amount_in_default_currency"])) == pytest.approx(
-        Decimal("117.65"), abs=Decimal("0.5")
-    )
+    # The debt is kept in the group's currency, converted at the row's date:
+    # 100 EUR / 0.85 ≈ 117.65 USD.
+    assert line["currency"] == "USD"
+    assert Decimal(str(line["amount"])) == pytest.approx(Decimal("117.65"), abs=Decimal("0.01"))
+    assert line["amount_in_default_currency"] == line["amount"]
 
 
 @pytest.mark.asyncio

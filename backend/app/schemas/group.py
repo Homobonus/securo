@@ -115,3 +115,5 @@ class GroupBalances(BaseModel):
     self_member_id: Optional[uuid.UUID] = None
     default_currency: str
     lines: list[GroupBalanceLine] = []
+    #: Some share or settlement had no exchange rate and counted 1:1.
+    fx_fallback: bool = False
