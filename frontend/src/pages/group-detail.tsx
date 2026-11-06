@@ -200,6 +200,14 @@ export default function GroupDetailPage() {
     enabled: !!groupId,
   })
 
+  // Totals come from the server: over every row, not the 20 listed, and in
+  // the group's currency, not the viewer's.
+  const { data: summary } = useQuery({
+    queryKey: ['groups', groupId, 'summary'],
+    queryFn: () => groupsApi.summary(groupId),
+    enabled: !!groupId,
+  })
+
   // ── Member management ────────────────────────────────────────
   const [memberDialogOpen, setMemberDialogOpen] = useState(false)
   const [editingMember, setEditingMember] = useState<GroupMember | null>(null)
@@ -411,17 +419,10 @@ export default function GroupDetailPage() {
   // ── KPIs ─────────────────────────────────────────────────────
   const groupCurrency = group?.default_currency ?? 'USD'
 
-  // Sum cross-currency rows in the group's primary terms — using
-  // amount_primary when available, otherwise the native amount. Without
-  // this, EUR rows would silently add as USD (a €100 hotel would count
-  // as $100, throwing off the KPI vs. spending-by-category breakdown).
-  const totalMoved = useMemo(() => {
-    if (!groupTxs) return 0
-    return groupTxs.reduce(
-      (sum, tx) => sum + Number(tx.amount_primary ?? tx.amount),
-      0,
-    )
-  }, [groupTxs])
+  // Every row in the group's currency, converted server-side at each
+  // row's date. Summing amount_primary here added the viewer's own
+  // currency and labelled it with the group's.
+  const totalMoved = Number(summary?.total ?? 0)
 
   // KPIs roll up across currencies using each line's
   // amount_in_default_currency (FX-converted server-side). Filtering by
@@ -502,44 +503,26 @@ export default function GroupDetailPage() {
       }))
   }, [balances, isOwner, viewerMember, ownerMember, memberNameById, locale])
 
-  const monthlyData = useMemo(() => {
-    if (!groupTxs || groupTxs.length === 0) return []
-    const byMonth = new Map<string, number>()
-    for (const tx of groupTxs) {
-      const m = tx.date.slice(0, 7)
-      byMonth.set(m, (byMonth.get(m) ?? 0) + Number(tx.amount_primary ?? tx.amount))
-    }
-    return Array.from(byMonth.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([month, total]) => ({
+  const monthlyData = useMemo(
+    () =>
+      (summary?.by_month ?? []).map(({ month, total }) => ({
         month: new Date(month + '-01').toLocaleString(dateLocale, { month: 'short' }),
-        total: Number(total.toFixed(2)),
-      }))
-  }, [groupTxs, dateLocale])
+        total: Number(total),
+      })),
+    [summary, dateLocale],
+  )
 
-  // Group spending broken down by category — for the stacked horizontal
-  // bar. We sum debits only (income/credits aren't "spending"). When a
-  // tx has amount_primary we use that so cross-currency rows are
-  // comparable; otherwise fall back to the native amount, which is fine
-  // for single-currency groups.
-  const categoryBreakdown = useMemo(() => {
-    if (!groupTxs || groupTxs.length === 0) return [] as { id: string; name: string; color: string; total: number }[]
-    const map = new Map<string, { id: string; name: string; color: string; total: number }>()
-    for (const tx of groupTxs) {
-      if (tx.type !== 'debit') continue
-      const id = tx.category?.id ?? 'uncategorized'
-      const name = tx.category?.name ?? t('splitGroups.uncategorized')
-      const color = tx.category?.color ?? '#6B7280'
-      const value = Number(tx.amount_primary ?? tx.amount)
-      const existing = map.get(id)
-      if (existing) {
-        existing.total += value
-      } else {
-        map.set(id, { id, name, color, total: value })
-      }
-    }
-    return Array.from(map.values()).sort((a, b) => b.total - a.total)
-  }, [groupTxs, t])
+  // Spending (debits) by category, in the group's currency.
+  const categoryBreakdown = useMemo(
+    () =>
+      (summary?.by_category ?? []).map((c) => ({
+        id: c.category_id ?? 'uncategorized',
+        name: c.name ?? t('splitGroups.uncategorized'),
+        color: c.color ?? '#6B7280',
+        total: Number(c.total),
+      })),
+    [summary, t],
+  )
 
   const categoryBreakdownTotal = useMemo(
     () => categoryBreakdown.reduce((s, c) => s + c.total, 0),
@@ -601,6 +584,11 @@ export default function GroupDetailPage() {
           breakdown={viewerOwesBreakdown}
         />
       </div>
+      {summary?.fx_fallback && (
+        <p className="text-xs text-amber-600 dark:text-amber-400" data-testid="group-fx-fallback">
+          {t('transactions.fxFallbackBanner')}
+        </p>
+      )}
 
       {/* Spending trend (compact) */}
       {monthlyData.length > 1 && (

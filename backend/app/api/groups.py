@@ -18,6 +18,7 @@ from app.schemas.group import (
     GroupMemberUpdate,
     GroupRead,
     GroupUpdate,
+    GroupSummary,
 )
 from app.schemas.group_settlement import (
     GroupSettlementCreate,
@@ -190,6 +191,19 @@ async def list_group_transactions(
     if txs is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
     return txs
+
+
+@router.get("/{group_id}/summary", response_model=GroupSummary)
+async def get_summary(
+    group_id: uuid.UUID,
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """All of the group's transactions added up in the group's currency."""
+    summary = await group_service.summarize(session, group_id, ctx.workspace.id, ctx.user_id)
+    if summary is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+    return summary
 
 
 @router.get("/{group_id}/balances", response_model=GroupBalances)

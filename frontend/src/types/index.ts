@@ -430,6 +430,19 @@ export interface GroupMember {
   created_at: string
 }
 
+/** All of a group's transactions, added up in the group's currency. */
+export interface GroupSummary {
+  group_id: string
+  currency: string
+  transaction_count: number
+  total: string
+  by_month: { month: string; total: string }[]
+  /** Debits only, by category; a null id is "uncategorised". */
+  by_category: { category_id: string | null; name: string | null; color: string | null; total: string }[]
+  /** Some row had no rate and was counted 1:1. */
+  fx_fallback: boolean
+}
+
 export interface GroupSettlement {
   id: string
   group_id: string

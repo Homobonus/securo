@@ -80,6 +80,36 @@ class GroupBalanceLine(BaseModel):
     amount_in_default_currency: Decimal
 
 
+class GroupSummaryMonth(BaseModel):
+    month: str  # YYYY-MM
+    total: Decimal
+
+
+class GroupSummaryCategory(BaseModel):
+    category_id: Optional[uuid.UUID] = None
+    name: Optional[str] = None
+    color: Optional[str] = None
+    total: Decimal
+
+
+class GroupSummary(BaseModel):
+    """Every transaction of a group, added up in the group's own currency.
+
+    Each row is converted at the rate of its own date, so a trip kept in
+    EUR shows EUR whatever currency the cards were charged in.
+    """
+
+    group_id: uuid.UUID
+    currency: str
+    transaction_count: int
+    total: Decimal
+    by_month: list[GroupSummaryMonth] = []
+    #: Debits only: what was spent, by category.
+    by_category: list[GroupSummaryCategory] = []
+    #: True when some row had no rate and was counted 1:1.
+    fx_fallback: bool = False
+
+
 class GroupBalances(BaseModel):
     group_id: uuid.UUID
     self_member_id: Optional[uuid.UUID] = None
