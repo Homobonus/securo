@@ -88,6 +88,15 @@ class Settings(BaseSettings):
     # of any of them.
     storage_max_attachments_per_invoice: int = 20
 
+    # Receipt photos read by a vision model. Off until a key is set: the
+    # photo of a receipt leaves the server only for a deploy that opted in.
+    # The URL takes any OpenAI-compatible server (a local Ollama or vLLM
+    # with a vision model needs no key, so the URL alone turns it on).
+    openai_api_key: SecretStr = SecretStr("")
+    openai_api_url: str = "https://api.openai.com/v1"
+    receipt_scan_model: str = "gpt-4.1-mini"
+    receipt_scan_timeout_seconds: int = 120
+
     # S3 Storage (for future use)
     storage_s3_bucket: str = ""
     storage_s3_region: str = ""

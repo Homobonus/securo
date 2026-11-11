@@ -11,6 +11,9 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/page-header'
 import { SectionCard, Segmented, TH } from '@/components/invoice-ui'
 import { ReceiptDialog } from '@/components/receipts/receipt-dialog'
+import { ReceiptScanDialog } from '@/components/receipts/receipt-scan-dialog'
+import { ReceiptPhotoButton, ReceiptScansPanel } from '@/components/receipts/receipt-scans-panel'
+import { useReceiptScanAvailability } from '@/hooks/use-receipt-scan-availability'
 import { RetailConnectDialog } from '@/components/receipts/retail-connect-dialog'
 import { RetailConnectionsPanel } from '@/components/receipts/retail-connections-panel'
 import { receipts as receiptsApi, shoppingProducts } from '@/lib/api'
@@ -52,6 +55,8 @@ export default function ReceiptsPage() {
   const tab = (['receipts', 'products', 'stores'] as const).find((v) => v === params.get('tab')) ?? 'receipts'
   const [connectOpen, setConnectOpen] = useState(false)
   const [reconnect, setReconnect] = useState<RetailConnection | null>(null)
+  const [scanId, setScanId] = useState<string | null>(null)
+  const scanning = useReceiptScanAvailability()
 
   const setTab = (next: Tab) => {
     const copy = new URLSearchParams(params)
@@ -67,10 +72,20 @@ export default function ReceiptsPage() {
         title={t('receipts.title')}
         action={
           canWrite ? (
-            <Button size="sm" onClick={() => setConnectOpen(true)} data-testid="retail-connect-button">
-              <Plus className="h-4 w-4 mr-1.5" />
-              {t('receipts.connect.title')}
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              {scanning && (
+                <ReceiptPhotoButton
+                  onScanned={(id) => {
+                    setTab('receipts')
+                    setScanId(id)
+                  }}
+                />
+              )}
+              <Button size="sm" onClick={() => setConnectOpen(true)} data-testid="retail-connect-button">
+                <Plus className="h-4 w-4 mr-1.5" />
+                {t('receipts.connect.title')}
+              </Button>
+            </div>
           ) : undefined
         }
       />
@@ -87,11 +102,13 @@ export default function ReceiptsPage() {
         />
       </div>
 
-      {tab === 'receipts' && <ReceiptsTab />}
+      {tab === 'receipts' && <ReceiptsTab scanning={scanning} onOpenScan={setScanId} />}
       {tab === 'products' && <ProductsTab />}
       {tab === 'stores' && (
         <RetailConnectionsPanel onConnect={() => setConnectOpen(true)} onReconnect={(c) => setReconnect(c)} />
       )}
+
+      <ReceiptScanDialog scanId={scanId} onClose={() => setScanId(null)} />
 
       <RetailConnectDialog
         open={connectOpen || reconnect !== null}
@@ -105,7 +122,7 @@ export default function ReceiptsPage() {
   )
 }
 
-function ReceiptsTab() {
+function ReceiptsTab({ scanning, onOpenScan }: { scanning: boolean; onOpenScan: (scanId: string) => void }) {
   const { t } = useTranslation()
   const locale = useDisplayLocale()
   const { mask } = usePrivacyMode()
@@ -172,6 +189,8 @@ function ReceiptsTab() {
           />
         </div>
       </div>
+
+      {scanning && canWrite && <ReceiptScansPanel onOpen={onOpenScan} />}
 
       <SectionCard>
         {isLoading ? (
@@ -245,7 +264,14 @@ function ReceiptsTab() {
         </div>
       )}
 
-      <ReceiptDialog receiptId={openId} onClose={() => setOpenId(null)} />
+      <ReceiptDialog
+        receiptId={openId}
+        onClose={() => setOpenId(null)}
+        onEditScan={(id) => {
+          setOpenId(null)
+          onOpenScan(id)
+        }}
+      />
     </>
   )
 }

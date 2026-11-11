@@ -16,6 +16,7 @@ Three jobs, kept apart so each can be tested without the others:
 """
 from __future__ import annotations
 
+import unicodedata
 import uuid
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -188,15 +189,35 @@ async def reparse_receipts(
 # ---------------------------------------------------------------------------
 # Pairing with bank transactions
 # ---------------------------------------------------------------------------
-def _keywords(source: str) -> tuple[str, ...]:
-    provider = get_retail_provider(source)
-    return provider.merchant_keywords if provider else ()
+def fold(text: str) -> str:
+    """Casefolded, without diacritics: banks print "ZABKA" for "Żabka"."""
+    decomposed = unicodedata.normalize("NFKD", text.casefold().replace("ł", "l"))
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+
+
+#: Words in a shop's name that say nothing about which shop it is.
+_GENERIC_STORE_WORDS = frozenset(
+    {"sklep", "market", "supermarket", "hipermarket", "sp", "spolka", "sa", "s.a.", "z", "o.o.", "sp.", "the"}
+)
+
+
+def _keywords(receipt: Receipt) -> tuple[str, ...]:
+    provider = get_retail_provider(receipt.source)
+    if provider is not None:
+        return provider.merchant_keywords
+    # A photographed receipt has no provider; its shop's name is the hint.
+    words = [
+        word.strip(".,;:-\"'()")
+        for word in fold(receipt.store_name or "").split()
+    ]
+    distinctive = [w for w in words if len(w) >= 3 and w not in _GENERIC_STORE_WORDS]
+    return tuple(distinctive[:1])
 
 
 def _names_store(tx: Transaction, keywords: Iterable[str]) -> bool:
-    text = " ".join(
+    text = fold(" ".join(
         part for part in (tx.description, tx.original_description, tx.payee) if part
-    ).casefold()
+    ))
     return any(keyword in text for keyword in keywords)
 
 
@@ -239,7 +260,7 @@ async def find_candidates(
     candidates = [
         tx for tx in (await session.execute(statement)).scalars().all() if tx.id not in excluded
     ]
-    keywords = _keywords(receipt.source)
+    keywords = _keywords(receipt)
     candidates.sort(
         key=lambda tx: (not _names_store(tx, keywords), abs((tx.date - receipt.date).days), tx.date)
     )
@@ -250,7 +271,7 @@ def pick_match(receipt: Receipt, candidates: list[Transaction]) -> Optional[Tran
     """The one unambiguous candidate, or None."""
     if not candidates:
         return None
-    keywords = _keywords(receipt.source)
+    keywords = _keywords(receipt)
     naming = [tx for tx in candidates if _names_store(tx, keywords)]
     pool = naming or candidates
     if len(pool) == 1:

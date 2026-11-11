@@ -166,6 +166,24 @@ przenosić poza serwer (np. `rclone` do chmury).
 W spoczynku całość zajmuje ok. 0,5–0,7 GB RAM i blisko 0% CPU. Krótkie skoki
 pojawiają się przy synchronizacji banków i sklepów (co godzinę).
 
+## 9. Zdjęcia paragonów (opcjonalnie)
+
+Paragony ze sklepów bez konta (Żabka, Carrefour, Rossmann…) można dodać
+zdjęciem: model AI odczytuje pozycje, a Ty je sprawdzasz i zatwierdzasz.
+Bez klucza funkcja jest wyłączona i przycisk się nie pokazuje.
+
+```sh
+# w /opt/securo/.env
+OPENAI_API_KEY=sk-...
+# RECEIPT_SCAN_MODEL=gpt-4.1-mini   # domyślny
+docker compose up -d
+```
+
+Do OpenAI trafia tylko zdjęcie paragonu (pomniejszone, ok. 300–800 kB),
+w chwili gdy je dodajesz. Koszt: kilka groszy za paragon. Zamiast OpenAI
+można wskazać własny serwer zgodny z API OpenAI (np. Ollama z modelem
+wizyjnym) przez `OPENAI_API_URL`; wtedy klucz nie jest potrzebny.
+
 ## Rozwiązywanie problemów
 
 | Objaw | Sprawdź |

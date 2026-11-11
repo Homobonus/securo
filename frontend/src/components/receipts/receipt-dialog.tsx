@@ -1,7 +1,8 @@
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link2, Link2Off, Loader2 } from 'lucide-react'
+import { Image, Link2, Link2Off, Loader2, Pencil } from 'lucide-react'
 import { toast } from 'sonner'
 
 import {
@@ -14,17 +15,30 @@ import {
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TH } from '@/components/invoice-ui'
+import { ScanPhoto } from '@/components/receipts/receipt-scan-dialog'
 import { receipts as receiptsApi } from '@/lib/api'
 import { formatCurrency } from '@/lib/format'
 import { formatDate } from '@/lib/date-range-format'
-import { apiErrorMessage, formatQuantity, sourceLabel } from '@/lib/receipt-utils'
+import { apiErrorMessage, formatQuantity, SCAN_SOURCE, sourceLabel } from '@/lib/receipt-utils'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useWorkspace } from '@/contexts/workspace-context'
 
-/** One receipt: its lines, and which bank transaction paid for it. */
-export function ReceiptDialog({ receiptId, onClose }: { receiptId: string | null; onClose: () => void }) {
+/**
+ * One receipt: its lines, and which bank transaction paid for it. A receipt
+ * read off a photo also shows the photo and can be corrected.
+ */
+export function ReceiptDialog({
+  receiptId,
+  onClose,
+  onEditScan,
+}: {
+  receiptId: string | null
+  onClose: () => void
+  onEditScan?: (scanId: string) => void
+}) {
   const { t } = useTranslation()
+  const [photoFor, setPhotoFor] = useState<string | null>(null)
   const locale = useDisplayLocale()
   const { mask } = usePrivacyMode()
   const { canWrite } = useWorkspace()
@@ -82,6 +96,28 @@ export function ReceiptDialog({ receiptId, onClose }: { receiptId: string | null
                 {receipt.store_address && ` · ${receipt.store_address}`}
               </DialogDescription>
             </DialogHeader>
+
+            {receipt.source === SCAN_SOURCE && (
+              <div className="space-y-3" data-testid="receipt-scan-actions">
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setPhotoFor(photoFor === receipt.id ? null : receipt.id)}
+                  >
+                    <Image className="h-3.5 w-3.5 mr-1.5" />
+                    {photoFor === receipt.id ? t('receipts.scan.hidePhoto') : t('receipts.scan.showPhoto')}
+                  </Button>
+                  {canWrite && onEditScan && (
+                    <Button size="sm" variant="outline" onClick={() => onEditScan(receipt.external_id)}>
+                      <Pencil className="h-3.5 w-3.5 mr-1.5" />
+                      {t('receipts.scan.correct')}
+                    </Button>
+                  )}
+                </div>
+                {photoFor === receipt.id && <ScanPhoto scanId={receipt.external_id} className="max-w-sm" />}
+              </div>
+            )}
 
             <div className="rounded-lg border border-border p-3" data-testid="receipt-pairing">
               <div className="text-xs font-medium text-muted-foreground mb-2">{t('receipts.detail.payment')}</div>

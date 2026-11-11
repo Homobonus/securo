@@ -106,6 +106,9 @@ import type {
   ReconciliationHistoryEvent,
   ReceiptDetail,
   ReceiptList,
+  ReceiptScan,
+  ReceiptScanAvailability,
+  ReceiptScanDraft,
   ReceiptTransaction,
   RetailConnection,
   RetailConnectionStarted,
@@ -996,6 +999,46 @@ export const receipts = {
   autoMatch: async (): Promise<{ matched: number }> => {
     const { data } = await api.post('/receipts/match')
     return data
+  },
+}
+
+/** Reading a photo waits for the model; give it longer than a normal call. */
+const RECEIPT_SCAN_TIMEOUT_MS = 180_000
+
+export const receiptScans = {
+  availability: async (): Promise<ReceiptScanAvailability> => {
+    const { data } = await api.get('/receipt-scans/status')
+    return data
+  },
+  /** Drafts still waiting for a person (ready, failed, or being read). */
+  list: async (): Promise<ReceiptScan[]> => {
+    const { data } = await api.get('/receipt-scans')
+    return data
+  },
+  get: async (id: string): Promise<ReceiptScan> => {
+    const { data } = await api.get(`/receipt-scans/${id}`)
+    return data
+  },
+  upload: async (photo: Blob, filename = 'receipt.jpg'): Promise<ReceiptScan> => {
+    const form = new FormData()
+    form.append('file', photo, filename)
+    const { data } = await api.post('/receipt-scans', form, { timeout: RECEIPT_SCAN_TIMEOUT_MS })
+    return data
+  },
+  image: async (id: string): Promise<Blob> => {
+    const { data } = await api.get(`/receipt-scans/${id}/image`, { responseType: 'blob' })
+    return data
+  },
+  retry: async (id: string): Promise<ReceiptScan> => {
+    const { data } = await api.post(`/receipt-scans/${id}/retry`, undefined, { timeout: RECEIPT_SCAN_TIMEOUT_MS })
+    return data
+  },
+  accept: async (id: string, draft: ReceiptScanDraft): Promise<ReceiptDetail> => {
+    const { data } = await api.post(`/receipt-scans/${id}/accept`, draft)
+    return data
+  },
+  remove: async (id: string): Promise<void> => {
+    await api.delete(`/receipt-scans/${id}`)
   },
 }
 

@@ -63,6 +63,10 @@ x-backend-env: &backend-env
   # TTL for tokens minted from /agents/connections → "External MCP access".
   # Used by Claude Desktop, n8n, custom clients plugging into Securo.
   AGENTS_MCP_EXTERNAL_TTL_DAYS: ${AGENTS_MCP_EXTERNAL_TTL_DAYS:-90}
+  # Receipt photos read by a vision model; off while OPENAI_API_KEY is empty.
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  OPENAI_API_URL: ${OPENAI_API_URL:-https://api.openai.com/v1}
+  RECEIPT_SCAN_MODEL: ${RECEIPT_SCAN_MODEL:-gpt-4.1-mini}
   # LLM provider config: only the provider you actually use needs setting.
   AGENTS_DEFAULT_PROVIDER: ${AGENTS_DEFAULT_PROVIDER:-ollama}
   AGENTS_DEFAULT_MODEL: ${AGENTS_DEFAULT_MODEL:-}

@@ -232,3 +232,46 @@ class ShoppingProductAlias(Base):
     normalized_name: Mapped[str] = mapped_column(String(255))
 
     product: Mapped["ShoppingProduct"] = relationship(back_populates="aliases")
+
+
+#: Lifecycle of a receipt photo. `ready` holds a draft read off the photo
+#: for a person to correct; `failed` keeps the photo so reading can be
+#: retried; `accepted` became a receipt, which keeps pointing back here
+#: for the photo.
+RECEIPT_SCAN_STATUSES = ("processing", "ready", "failed", "accepted")
+
+
+class ReceiptScan(Base):
+    """A photo of a paper receipt, read by a vision model, waiting for review.
+
+    Nothing reaches `receipts` until a person accepts the draft: a model
+    misreads a price now and then, and a wrong price would sit in the
+    product's history for good.
+    """
+
+    __tablename__ = "receipt_scans"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('processing', 'ready', 'failed', 'accepted')",
+            name="ck_receipt_scans_status",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(String(20), default="processing", server_default="processing")
+    storage_key: Mapped[str] = mapped_column(String(500))
+    content_type: Mapped[str] = mapped_column(String(100))
+    # The draft as the model read it; replaced by what was accepted.
+    result: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    error: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    model: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    receipt_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("receipts.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

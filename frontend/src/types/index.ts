@@ -1921,6 +1921,48 @@ export interface ReceiptDetail extends Receipt {
   items: ReceiptItem[]
 }
 
+export type ReceiptScanStatus = 'processing' | 'ready' | 'failed' | 'accepted'
+
+/** One line read off a receipt photo. `total` is before the discount. */
+export interface ReceiptScanLine {
+  name: string
+  quantity: string
+  unit: string | null
+  unit_price: string
+  total: string
+  discount: string
+}
+
+export interface ReceiptScanDraft {
+  store_name: string | null
+  store_address: string | null
+  tax_id: string | null
+  date: string | null
+  /** HH:MM, local to the shop. */
+  time: string | null
+  currency: string
+  total: string | null
+  items: ReceiptScanLine[]
+}
+
+/** A receipt photo, read by a model, waiting for a person to accept it. */
+export interface ReceiptScan {
+  id: string
+  status: ReceiptScanStatus
+  draft: ReceiptScanDraft | null
+  items_sum: string | null
+  /** Stable code, translated under `receipts.scan.errors`. */
+  error: string | null
+  model: string | null
+  receipt_id: string | null
+  created_at: string
+}
+
+export interface ReceiptScanAvailability {
+  enabled: boolean
+  model: string | null
+}
+
 export interface ReceiptList {
   items: Receipt[]
   total: number

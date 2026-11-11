@@ -19,7 +19,7 @@ from app.core.module_gate import require_module, require_module_write
 from app.core.workspace_context import WorkspaceContext
 from app.models.account import Account
 from app.models.category import Category
-from app.models.receipt import Receipt, ReceiptItem, RetailConnection, ShoppingProduct
+from app.models.receipt import Receipt, ReceiptItem, ReceiptScan, RetailConnection, ShoppingProduct
 from app.providers.retail import list_retail_providers
 from app.schemas.receipt import (
     ConsumptionRead,
@@ -48,6 +48,7 @@ from app.schemas.receipt import (
 from app.services import receipt_service as svc
 from app.services import retail_connection_service as connections
 from app.services.module_service import ModuleId
+from app.services.receipt_scan_service import SCAN_SOURCE, forget_image
 from app.services.receipt_service import Purchase, ReceiptError
 
 router = APIRouter(prefix="/api", tags=["receipts"])
@@ -367,6 +368,16 @@ async def delete_receipt(
     session: AsyncSession = Depends(get_async_session),
 ):
     receipt = await _load_receipt(session, receipt_id, ctx.workspace.id)
+    if receipt.source == SCAN_SOURCE:
+        # A photographed receipt takes its photo with it.
+        scan = await session.scalar(
+            select(ReceiptScan).where(
+                ReceiptScan.workspace_id == ctx.workspace.id, ReceiptScan.receipt_id == receipt.id
+            )
+        )
+        if scan is not None:
+            await forget_image(scan)
+            await session.delete(scan)
     await session.delete(receipt)
     await session.commit()
 

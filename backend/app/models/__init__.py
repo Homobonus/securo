@@ -39,6 +39,7 @@ from app.models.product import Product, ProductPrice
 from app.models.receipt import (
     Receipt,
     ReceiptItem,
+    ReceiptScan,
     RetailConnection,
     ShoppingProduct,
     ShoppingProductAlias,
@@ -100,6 +101,7 @@ __all__ = [
     "ProductPrice",
     "Receipt",
     "ReceiptItem",
+    "ReceiptScan",
     "RetailConnection",
     "ShoppingProduct",
     "ShoppingProductAlias",

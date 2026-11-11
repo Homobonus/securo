@@ -1,5 +1,6 @@
 import uuid
 from datetime import date, datetime
+from datetime import date as CalendarDate
 from decimal import Decimal
 from typing import Literal, Optional
 
@@ -208,3 +209,62 @@ class ShoppingProductUpdate(BaseModel):
 
 class ShoppingProductMerge(BaseModel):
     source_ids: list[uuid.UUID] = Field(..., min_length=1, max_length=100)
+
+
+# ---------------------------------------------------------------------------
+# Receipt photos
+# ---------------------------------------------------------------------------
+ReceiptScanStatus = Literal["processing", "ready", "failed", "accepted"]
+
+
+class ReceiptScanLine(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    quantity: Decimal = Field(gt=0)
+    unit: Optional[str] = Field(None, max_length=10)
+    unit_price: Decimal
+    # Shelf value before the discount, as on Lidl and Biedronka receipts.
+    total: Decimal
+    discount: Decimal = Field(Decimal("0"), ge=0)
+
+
+class _ReceiptScanHeader(BaseModel):
+    store_name: Optional[str] = Field(None, max_length=255)
+    store_address: Optional[str] = Field(None, max_length=500)
+    tax_id: Optional[str] = Field(None, max_length=32)
+    time: Optional[str] = Field(None, pattern=r"^\d{2}:\d{2}$")
+    currency: str = Field("PLN", min_length=3, max_length=3)
+
+
+class ReceiptScanDraft(_ReceiptScanHeader):
+    """A receipt as read off the photo, for a person to correct."""
+
+    date: Optional[CalendarDate] = None
+    total: Optional[Decimal] = None
+    items: list[ReceiptScanLine] = []
+
+
+class ReceiptScanAccept(_ReceiptScanHeader):
+    """The corrected draft; becomes a receipt."""
+
+    date: CalendarDate
+    total: Decimal = Field(gt=0)
+    items: list[ReceiptScanLine] = Field(min_length=1)
+
+
+class ReceiptScanRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    status: ReceiptScanStatus
+    draft: Optional[ReceiptScanDraft] = None
+    # Lines minus discounts, against the total paid; None while unread.
+    items_sum: Optional[Decimal] = None
+    error: Optional[str] = None
+    model: Optional[str] = None
+    receipt_id: Optional[uuid.UUID] = None
+    created_at: datetime
+
+
+class ReceiptScanStatusRead(BaseModel):
+    enabled: bool
+    model: Optional[str] = None

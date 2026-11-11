@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { apiErrorMessage, formatQuantity, needsSignIn, sourceLabel, stockLevel } from './receipt-utils'
+import { apiErrorMessage, formatQuantity, needsSignIn, scanLinesSum, sourceLabel, stockLevel } from './receipt-utils'
 import type { ShoppingConsumption } from '@/types'
 
 const consumption = (overrides: Partial<ShoppingConsumption>): ShoppingConsumption => ({
@@ -56,5 +56,14 @@ describe('helpers', () => {
   it('formats pieces and weights', () => {
     expect(formatQuantity('2.000', 'en')).toBe('2')
     expect(formatQuantity('0.598', 'en')).toBe('0.598')
+  })
+})
+
+describe('scanLinesSum', () => {
+  it('adds lines after their discounts, in whole cents', () => {
+    const line = (total: string, discount = '0') => ({ name: 'x', quantity: '1', unit: null, unit_price: total, total, discount })
+    expect(scanLinesSum([line('19.99', '3.00'), line('4.47')])).toBe(21.46)
+    expect(scanLinesSum([line('0.10'), line('0.20')])).toBe(0.3)
+    expect(scanLinesSum([line('')])).toBe(0)
   })
 })

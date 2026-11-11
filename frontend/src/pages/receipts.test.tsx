@@ -4,7 +4,14 @@ import { screen, waitFor, within } from '@testing-library/react'
 import ReceiptsPage from '@/pages/receipts'
 import ShoppingProductDetailPage from '@/pages/shopping-product-detail'
 import { renderWithProviders, t } from '@/test/utils'
-import type { Receipt, ReceiptDetail, RetailConnection, ShoppingProduct, ShoppingProductDetail } from '@/types'
+import type {
+  Receipt,
+  ReceiptDetail,
+  ReceiptScan,
+  RetailConnection,
+  ShoppingProduct,
+  ShoppingProductDetail,
+} from '@/types'
 
 const api = vi.hoisted(() => ({
   receipts: {
@@ -28,6 +35,16 @@ const api = vi.hoisted(() => ({
     remove: vi.fn(),
   },
   accounts: { list: vi.fn() },
+  receiptScans: {
+    availability: vi.fn(),
+    list: vi.fn(),
+    get: vi.fn(),
+    upload: vi.fn(),
+    image: vi.fn(),
+    retry: vi.fn(),
+    accept: vi.fn(),
+    remove: vi.fn(),
+  },
 }))
 
 vi.mock('@/lib/api', () => ({
@@ -35,6 +52,7 @@ vi.mock('@/lib/api', () => ({
   shoppingProducts: api.shoppingProducts,
   retail: api.retail,
   accounts: api.accounts,
+  receiptScans: api.receiptScans,
 }))
 
 vi.mock('@/hooks/use-display-locale', () => ({
@@ -144,6 +162,123 @@ beforeEach(() => {
   ])
   api.retail.connections.mockResolvedValue([connection])
   api.accounts.list.mockResolvedValue([])
+  api.receiptScans.availability.mockResolvedValue({ enabled: false, model: null })
+  api.receiptScans.list.mockResolvedValue([])
+  api.receiptScans.image.mockResolvedValue(new Blob(['x'], { type: 'image/jpeg' }))
+})
+
+function scan(overrides: Partial<ReceiptScan> = {}): ReceiptScan {
+  return {
+    id: 's1',
+    status: 'ready',
+    draft: {
+      store_name: 'Żabka',
+      store_address: null,
+      tax_id: null,
+      date: '2026-11-05',
+      time: '18:42',
+      currency: 'PLN',
+      total: '21.47',
+      items: [
+        { name: 'Kawa Kimbo 250g', quantity: '1.000', unit: null, unit_price: '19.99', total: '19.99', discount: '3.00' },
+        { name: 'Banany', quantity: '0.746', unit: 'kg', unit_price: '5.99', total: '4.47', discount: '0.00' },
+      ],
+    },
+    items_sum: '21.46',
+    error: null,
+    model: 'gpt-4.1-mini',
+    receipt_id: null,
+    created_at: '2026-11-05T18:50:00Z',
+    ...overrides,
+  }
+}
+
+describe('Receipt photos', () => {
+  it('stays hidden until the server has a model', async () => {
+    renderWithProviders(<ReceiptsPage />, { route: '/receipts' })
+    await screen.findAllByTestId('receipt-row')
+    expect(screen.queryByTestId('receipt-photo-button')).not.toBeInTheDocument()
+  })
+
+  it('reads a photo, flags a sum that does not add up, and saves the corrected draft', async () => {
+    api.receiptScans.availability.mockResolvedValue({ enabled: true, model: 'gpt-4.1-mini' })
+    api.receiptScans.upload.mockResolvedValue(scan())
+    api.receiptScans.get.mockResolvedValue(scan())
+    api.receiptScans.accept.mockResolvedValue({ ...receipt({ source: 'scan', transaction_id: 'tx' }), items: [] })
+    const { user } = renderWithProviders(<ReceiptsPage />, { route: '/receipts' })
+
+    const input = await screen.findByTestId('receipt-photo-input')
+    await user.upload(input, new File(['jpeg'], 'IMG_1.jpg', { type: 'image/jpeg' }))
+    await waitFor(() => expect(api.receiptScans.upload).toHaveBeenCalledTimes(1))
+
+    const dialog = await screen.findByTestId('receipt-scan-dialog')
+    expect(within(dialog).getByTestId('scan-store')).toHaveValue('Żabka')
+    expect(within(dialog).getAllByTestId('scan-line')).toHaveLength(2)
+    // 19.99 − 3.00 + 4.47 = 21.46 against 21.47 paid: one digit was misread.
+    expect(within(dialog).getByTestId('scan-mismatch')).toBeInTheDocument()
+
+    const banana = within(dialog).getAllByLabelText(t('receipts.scan.lineValue'))[1]
+    await user.clear(banana)
+    await user.type(banana, '4.48')
+    expect(within(dialog).queryByTestId('scan-mismatch')).not.toBeInTheDocument()
+
+    await user.click(within(dialog).getByTestId('scan-accept'))
+    await waitFor(() => expect(api.receiptScans.accept).toHaveBeenCalledTimes(1))
+    const [id, sent] = api.receiptScans.accept.mock.calls[0]
+    expect(id).toBe('s1')
+    expect(sent.items[1].total).toBe('4.48')
+    expect(sent.date).toBe('2026-11-05')
+  })
+
+  it('cannot save a draft without a date', async () => {
+    api.receiptScans.availability.mockResolvedValue({ enabled: true, model: 'm' })
+    const undated = scan()
+    undated.draft = { ...undated.draft!, date: null }
+    api.receiptScans.list.mockResolvedValue([undated])
+    api.receiptScans.get.mockResolvedValue(undated)
+    const { user } = renderWithProviders(<ReceiptsPage />, { route: '/receipts' })
+
+    await user.click(await screen.findByTestId('receipt-scan-row'))
+    const dialog = await screen.findByTestId('receipt-scan-dialog')
+    expect(within(dialog).getByTestId('scan-accept')).toBeDisabled()
+    expect(within(dialog).getByText(t('receipts.scan.needDate'))).toBeInTheDocument()
+  })
+
+  it('explains a failed read and offers to read again', async () => {
+    api.receiptScans.availability.mockResolvedValue({ enabled: true, model: 'm' })
+    const failed = scan({ status: 'failed', error: 'quota', draft: null, items_sum: null })
+    api.receiptScans.list.mockResolvedValue([failed])
+    api.receiptScans.get.mockResolvedValue(failed)
+    api.receiptScans.retry.mockResolvedValue(scan())
+    const { user } = renderWithProviders(<ReceiptsPage />, { route: '/receipts' })
+
+    const row = await screen.findByTestId('receipt-scan-row')
+    expect(within(row).getByText(t('receipts.scan.errors.quota'))).toBeInTheDocument()
+    await user.click(row)
+    const dialog = await screen.findByTestId('receipt-scan-dialog')
+    expect(within(dialog).getByTestId('scan-error')).toHaveTextContent(t('receipts.scan.errors.quota'))
+    await user.click(within(dialog).getByTestId('scan-retry'))
+    await waitFor(() => expect(api.receiptScans.retry).toHaveBeenCalledWith('s1'))
+  })
+
+  it('lets a photographed receipt be corrected later', async () => {
+    api.receiptScans.availability.mockResolvedValue({ enabled: true, model: 'm' })
+    const photographed = receipt({ id: 'r9', source: 'scan', external_id: 's1', store_name: 'Żabka' })
+    api.receipts.list.mockResolvedValue({ items: [photographed], total: 1 })
+    api.receipts.get.mockResolvedValue({ ...photographed, items: [] })
+    api.receipts.candidates.mockResolvedValue([])
+    api.receiptScans.get.mockResolvedValue(scan({ status: 'accepted', receipt_id: 'r9' }))
+    const { user } = renderWithProviders(<ReceiptsPage />, { route: '/receipts' })
+
+    const row = await screen.findByTestId('receipt-row')
+    expect(within(row).getByText(t('receipts.scan.source'))).toBeInTheDocument()
+    await user.click(row)
+    const dialog = await screen.findByTestId('receipt-dialog')
+    await user.click(within(dialog).getByRole('button', { name: t('receipts.scan.correct') }))
+    const review = await screen.findByTestId('receipt-scan-dialog')
+    expect(within(review).getByTestId('scan-accept')).toHaveTextContent(t('receipts.scan.saveChanges'))
+    expect(api.receiptScans.get).toHaveBeenCalledWith('s1')
+  })
 })
 
 describe('ReceiptsPage', () => {

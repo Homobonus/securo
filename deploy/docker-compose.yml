@@ -37,6 +37,10 @@ x-backend-env: &backend-env
   ENABLE_BANKING_PRIVATE_KEY_FILE: ${ENABLE_BANKING_PRIVATE_KEY_FILE:-/app/secrets/enable_banking_private.pem}
   ENABLE_BANKING_API_URL: ${ENABLE_BANKING_API_URL:-https://api.enablebanking.com}
   SIMPLEFIN_ENABLED: ${SIMPLEFIN_ENABLED:-false}
+  # Receipt photos: off while OPENAI_API_KEY is empty.
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  OPENAI_API_URL: ${OPENAI_API_URL:-https://api.openai.com/v1}
+  RECEIPT_SCAN_MODEL: ${RECEIPT_SCAN_MODEL:-gpt-4.1-mini}
   AGENTS_ENABLED: "false"
 
 x-backend-base: &backend-base
