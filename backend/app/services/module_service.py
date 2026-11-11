@@ -7,7 +7,8 @@ the registries below, never an edit to navigation code.
 
 The chain, in order:
 
-    0. Deployment   — capability flags from the environment. Veto only.
+    0. Deployment   — capability flags from the environment, and the
+                      operator's DISABLED_MODULES list. Veto only.
     1. Catalog      — each module declares whether it is on by default.
     2. Kind policy  — the only layer with opinions today.
     3. Workspace    — per-workspace override. Abstains for now.
@@ -34,6 +35,7 @@ install (the operator's call), a kind policy turns it off for one
 workspace. `AGENTS_ENABLED` is still read directly by the frontend and
 is not part of the catalog — see MODULE_DEPLOYMENT_FLAGS.
 """
+import os
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
@@ -202,6 +204,19 @@ DEFAULT_PROVIDERS: Sequence[ModuleProvider] = (
 MODULE_DEPLOYMENT_FLAGS: Mapping[ModuleId, str] = {}
 
 
+def disabled_modules_from_env() -> frozenset[str]:
+    """Modules the operator switched off for the whole install.
+
+    `DISABLED_MODULES=assets,budgets,goals` hides what a household does
+    not use, from navigation, the command palette and the routes. It is a
+    veto like the flags above: nothing is deleted, and removing a name
+    from the list brings the module back with its data. Unknown names are
+    ignored, so a typo hides nothing rather than failing to start.
+    """
+    raw = os.getenv("DISABLED_MODULES", "")
+    return frozenset(part.strip().lower() for part in raw.split(",") if part.strip())
+
+
 class ModuleResolver:
     """Runs the chain. Cheap enough to build per request."""
 
@@ -213,12 +228,14 @@ class ModuleResolver:
         providers: Sequence[ModuleProvider] = DEFAULT_PROVIDERS,
         deployment_flags: Mapping[ModuleId, str] = MODULE_DEPLOYMENT_FLAGS,
         flag_reader: Callable[[str], bool] = feature_flag,
+        disabled_reader: Callable[[], frozenset[str]] = disabled_modules_from_env,
     ) -> None:
         self._catalog = catalog
         self._policies = policies
         self._providers = providers
         self._deployment_flags = deployment_flags
         self._flag_reader = flag_reader
+        self._disabled_reader = disabled_reader
 
     def resolve(self, workspace: Workspace) -> list[str]:
         """The modules this workspace shows, as sorted strings.
@@ -253,6 +270,8 @@ class ModuleResolver:
             for module_id, flag_name in self._deployment_flags.items()
             if not self._flag_reader(flag_name)
         }
+        disabled = self._disabled_reader()
+        vetoed |= {module_id for module_id in current if module_id.value in disabled}
         return frozenset(current - vetoed)
 
 

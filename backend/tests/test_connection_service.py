@@ -895,6 +895,60 @@ async def test_sync_connection_rate_limited_reports_outcome_and_keeps_last_sync(
     assert result_conn.last_sync_at == stale_sync_at
 
 
+
+@pytest.mark.asyncio
+async def test_a_rate_limited_connection_pauses_background_sync_until_it_recovers(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """After a 429 the hourly background sync must leave the bank alone for a
+    while: retrying every hour kept ING's daily limit permanently exhausted.
+    The next sync that gets through clears the pause."""
+    from datetime import datetime, timezone
+
+    from app.services.connection_service import RATE_LIMIT_BACKOFF, RATE_LIMITED_UNTIL
+    from app.tasks.sync_tasks import _rate_limited
+
+    conn = await _make_connection(session, test_user.id, "ING")
+    # A 429 rolls the session back, expiring every loaded object.
+    conn_id, workspace_id, user_id = conn.id, test_workspace.id, test_user.id
+    limited = AsyncMock()
+    limited.refresh_credentials = AsyncMock(return_value={"token": "fake"})
+    limited.get_accounts = AsyncMock(side_effect=ProviderRateLimited("429"))
+    with patch("app.services.connection_service.get_provider", return_value=limited):
+        result_conn, _, _ = await sync_connection(session, conn_id, workspace_id, user_id)
+
+    assert result_conn.settings is not None
+    until = datetime.fromisoformat(result_conn.settings[RATE_LIMITED_UNTIL])
+    now = datetime.now(timezone.utc)
+    assert RATE_LIMIT_BACKOFF - (until - now) < timedelta(minutes=1)
+    assert _rate_limited(result_conn.settings, now)
+    assert not _rate_limited(result_conn.settings, until + timedelta(seconds=1))
+
+    healthy = AsyncMock()
+    healthy.refresh_credentials = AsyncMock(return_value={"token": "fake"})
+    healthy.get_accounts = AsyncMock(return_value=[])
+    healthy.get_holdings = AsyncMock(return_value=[])
+    healthy.trigger_refresh = AsyncMock(return_value="skipped")
+    healthy.action_required_warnings = []
+    healthy.incomplete_account_ids = set()
+    with patch("app.services.connection_service.get_provider", return_value=healthy):
+        result_conn, _, outcome = await sync_connection(session, conn_id, workspace_id, user_id)
+    assert outcome != "rate_limited"
+    assert RATE_LIMITED_UNTIL not in (result_conn.settings or {})
+
+
+def test_rate_limited_ignores_missing_or_malformed_values():
+    from datetime import datetime, timezone
+
+    from app.tasks.sync_tasks import _rate_limited
+
+    now = datetime.now(timezone.utc)
+    assert not _rate_limited(None, now)
+    assert not _rate_limited({}, now)
+    assert not _rate_limited({"rate_limited_until": "nonsense"}, now)
+    assert not _rate_limited({"rate_limited_until": "2026-01-01T00:00:00"}, now)
+
+
 @pytest.mark.asyncio
 async def test_sync_connection_partial_user_action_warning_marks_connection_error(
     session: AsyncSession, test_user, test_workspace,

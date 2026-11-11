@@ -158,3 +158,35 @@ def test_module_ids_are_lower_snake_case(module_id: ModuleId):
     """The frontend mirrors these verbatim."""
     assert module_id.value == module_id.value.lower().strip()
     assert " " not in module_id.value and "-" not in module_id.value
+
+
+# ---------------------------------------------------------------------------
+# DISABLED_MODULES: the operator hides what the install does not use
+# ---------------------------------------------------------------------------
+def test_disabled_modules_are_vetoed_for_every_kind():
+    resolver = ModuleResolver(disabled_reader=lambda: frozenset({"assets", "budgets", "goals"}))
+    for kind in ("personal", "business"):
+        resolved = resolver.resolve(ws(kind))
+        assert not {"assets", "budgets", "goals"} & set(resolved)
+        assert "transactions" in resolved
+
+
+def test_unknown_names_hide_nothing():
+    resolver = ModuleResolver(disabled_reader=lambda: frozenset({"asets", "nonsense"}))
+    assert resolver.resolve(ws("personal")) == PERSONAL_MODULES
+
+
+def test_disabled_modules_cannot_grant_a_module():
+    # Business-only invoices stays off for a personal workspace whatever
+    # the list says: the list only removes.
+    resolver = ModuleResolver(disabled_reader=lambda: frozenset({"assets"}))
+    assert "invoices" not in resolver.resolve(ws("personal"))
+
+
+def test_the_env_list_is_trimmed_and_case_insensitive(monkeypatch):
+    from app.services.module_service import disabled_modules_from_env
+
+    monkeypatch.setenv("DISABLED_MODULES", " Assets, budgets ,,GOALS ")
+    assert disabled_modules_from_env() == frozenset({"assets", "budgets", "goals"})
+    monkeypatch.delenv("DISABLED_MODULES")
+    assert disabled_modules_from_env() == frozenset()

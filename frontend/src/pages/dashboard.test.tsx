@@ -36,6 +36,11 @@ vi.mock('@/hooks/use-privacy-mode', () => ({
   usePrivacyMode: () => ({ mask: (value: string) => value, privacyMode: false, MASK: '••••' }),
 }))
 
+let enabledModules = ['budgets', 'goals']
+vi.mock('@/contexts/workspace-context', () => ({
+  useWorkspace: () => ({ canWrite: true, hasModule: (id: string) => enabledModules.includes(id) }),
+}))
+
 vi.mock('@/contexts/auth-context', () => ({
   useAuth: () => ({ user: { preferences: { currency_display: 'USD' } } }),
 }))
@@ -106,6 +111,7 @@ const summary: DashboardSummary = {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  enabledModules = ['budgets', 'goals']
   api.dashboard.summary.mockResolvedValue(summary)
   api.dashboard.spendingByCategory.mockResolvedValue([])
   api.dashboard.balanceHistory.mockResolvedValue({ current: [], previous: [] })
@@ -224,5 +230,20 @@ describe('Dashboard refresh button', () => {
     expect(refetch).toHaveBeenCalledTimes(1)
     // Only the queries on screen: a refresh must not refetch every page visited earlier.
     expect(refetch).toHaveBeenCalledWith({ type: 'active' })
+  })
+})
+
+describe('Dashboard with modules switched off', () => {
+  it('does not ask for budgets or goals the install hides', async () => {
+    enabledModules = []
+    renderWithProviders(
+      <TooltipProvider delayDuration={0}>
+        <DashboardPage />
+      </TooltipProvider>,
+    )
+
+    await screen.findByText(formatCurrency(500, 'USD', 'en-US'))
+    expect(api.budgets.comparison).not.toHaveBeenCalled()
+    expect(api.goals.summary).not.toHaveBeenCalled()
   })
 })

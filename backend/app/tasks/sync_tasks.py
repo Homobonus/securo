@@ -17,10 +17,25 @@ from app.core.config import get_settings
 from app.models.bank_connection import BankConnection
 from app.providers.base import ProviderNotConfiguredError
 from app.services import connection_service
+from app.services.connection_service import RATE_LIMITED_UNTIL
 
 logger = logging.getLogger(__name__)
 
 PROVIDER_REFRESH_THRESHOLD = timedelta(hours=20)
+
+
+def _rate_limited(settings: dict | None, now: datetime) -> bool:
+    """True while a connection is backing off after the bank refused it (429)."""
+    value = (settings or {}).get(RATE_LIMITED_UNTIL)
+    if not isinstance(value, str):
+        return False
+    try:
+        until = datetime.fromisoformat(value)
+    except ValueError:
+        return False
+    if until.tzinfo is None:
+        return False
+    return now < until
 
 
 def _should_trigger_provider_refresh(settings: dict | None, now: datetime) -> bool:
@@ -75,6 +90,13 @@ async def _sync_all() -> int:
 
         with use_resolved_timezone(operation_timezone):
             for conn_id, user_id, last_sync, settings in connections:
+                if _rate_limited(settings, datetime.now(timezone.utc)):
+                    logger.info(
+                        "Skipping connection %s: rate limited until %s",
+                        conn_id,
+                        (settings or {}).get(RATE_LIMITED_UNTIL),
+                    )
+                    continue
                 try:
                     logger.info("Syncing connection %s (last_sync=%s)", conn_id, last_sync)
                     await _sync_one(

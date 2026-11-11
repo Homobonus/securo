@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { getAccountLabel, getAccountName, sortAccountsByAbsoluteBalance, sumAccountBalances } from '@/lib/account-utils'
 import { currentMonth, shiftMonth, monthLastDay, monthLabel, monthRange } from '@/lib/month-utils'
 import { useTranslation } from 'react-i18next'
+import { useWorkspace } from '@/contexts/workspace-context'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
@@ -248,9 +249,13 @@ export default function DashboardPage() {
     queryFn: () => dashboard.projectedTransactions({ month: monthParam }),
   })
 
+  // Modules the install switched off are not asked for at all.
+  const { hasModule } = useWorkspace()
+
   const { data: budgetComparison } = useQuery({
     queryKey: ['budgets', 'comparison', selectedMonth],
     queryFn: () => budgets.comparison(monthParam),
+    enabled: hasModule('budgets'),
   })
 
   const { data: categoriesList } = useQuery({
@@ -276,6 +281,7 @@ export default function DashboardPage() {
   const { data: goalsSummary } = useQuery({
     queryKey: ['goals', 'summary'],
     queryFn: () => goalsApi.summary(3),
+    enabled: hasModule('goals'),
   })
 
   const updateMutation = useMutation({

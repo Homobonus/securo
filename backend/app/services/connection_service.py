@@ -59,6 +59,13 @@ from app.services.transaction_match_service import find_unique_transaction_match
 
 logger = logging.getLogger(__name__)
 
+#: How long the background sync leaves a throttled connection alone. Banks
+#: under PSD2 cap unattended access (ING: a few calls a day) and some count
+#: refused calls too, so retrying every hour keeps the limit exhausted.
+#: A manual sync is still the person's call and is never held back.
+RATE_LIMIT_BACKOFF = timedelta(hours=12)
+RATE_LIMITED_UNTIL = "rate_limited_until"
+
 LOCAL_IMPORT_SOURCES = {"import", "csv", "ofx", "qif", "camt"}
 
 settings = get_settings()
@@ -2843,6 +2850,11 @@ async def sync_connection(
         # The healthy accounts just re-read a longer window, deduplicated.
         if not incomplete_fetch_account_ids:
             connection.last_sync_at = datetime.now(timezone.utc)
+        if (connection.settings or {}).get(RATE_LIMITED_UNTIL):
+            # The bank answered again: the background sync may resume.
+            connection.settings = {
+                k: v for k, v in (connection.settings or {}).items() if k != RATE_LIMITED_UNTIL
+            }
         action_required_warnings = getattr(provider, "action_required_warnings", None)
         if isinstance(action_required_warnings, list) and action_required_warnings:
             logger.warning(
@@ -2888,6 +2900,14 @@ async def sync_connection(
             conn = await session.get(BankConnection, connection_id)
             if conn and conn.status != "expired":
                 conn.status = "active"
+            if conn:
+                until = datetime.now(timezone.utc) + RATE_LIMIT_BACKOFF
+                conn.settings = {**(conn.settings or {}), RATE_LIMITED_UNTIL: until.isoformat()}
+                logger.warning(
+                    "Connection %s rate limited by the bank; background sync paused until %s",
+                    connection_id,
+                    until.isoformat(),
+                )
         # The row can vanish if the connection was deleted mid-sync. Fall back
         # to the one we already hold rather than raising: re-raising here would
         # escape as a 500, which is exactly what this handler exists to avoid.

@@ -19,6 +19,8 @@ x-backend-env: &backend-env
   # How long a sign-in lasts, in minutes. There is no refresh: when it runs
   # out, the app asks to sign in again.
   ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
+  # Modules hidden for everyone on this install, comma separated.
+  DISABLED_MODULES: ${DISABLED_MODULES:-}
   TRUSTED_PROXY_HOPS: "2"
   REDIS_URL: redis://redis:6379/0
   STORAGE_LOCAL_PATH: /app/data/attachments
