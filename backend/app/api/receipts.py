@@ -6,7 +6,7 @@ server: a connection is read back with its status, never its tokens.
 import uuid
 from datetime import date
 from decimal import Decimal
-from typing import Literal, Optional, cast
+from typing import Iterable, List, Literal, Optional, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select
@@ -19,7 +19,10 @@ from app.core.module_gate import require_module, require_module_write
 from app.core.workspace_context import WorkspaceContext
 from app.models.account import Account
 from app.models.category import Category
+from app.models.group import Group, GroupMember
 from app.models.receipt import Receipt, ReceiptItem, ReceiptScan, RetailConnection, ShoppingProduct
+from app.models.transaction import Transaction
+from app.models.transaction_split import TransactionSplit
 from app.providers.retail import list_retail_providers
 from app.schemas.receipt import (
     ConsumptionRead,
@@ -248,6 +251,32 @@ def _receipt_read(receipt: Receipt, item_count: int, cls=ReceiptRead):
     return payload
 
 
+async def _tag_groups(session: AsyncSession, receipts: Iterable[Receipt]) -> None:
+    """Name the shared-expense group each paying transaction is split into.
+
+    The same badge the transaction list shows: a receipt paid by a debit
+    shared with a group belongs to that group's spending too.
+    """
+    paid_by = {r.transaction.id: r.transaction for r in receipts if r.transaction is not None}
+    if not paid_by:
+        return
+    rows = await session.execute(
+        select(TransactionSplit.transaction_id, Group.id, Group.name)
+        .join(GroupMember, GroupMember.id == TransactionSplit.group_member_id)
+        .join(Group, Group.id == GroupMember.group_id)
+        .where(TransactionSplit.transaction_id.in_(paid_by))
+        .order_by(Group.name)
+    )
+    for transaction in paid_by.values():
+        transaction.group_id = None
+        transaction.group_name = None
+    for transaction_id, group_id, group_name in rows.all():
+        transaction = paid_by[transaction_id]
+        if transaction.group_id is None:
+            transaction.group_id = group_id
+            transaction.group_name = group_name
+
+
 async def _load_receipt(
     session: AsyncSession, receipt_id: uuid.UUID, workspace_id: uuid.UUID
 ) -> Receipt:
@@ -262,6 +291,7 @@ async def _load_receipt(
     )
     if receipt is None:
         raise HTTPException(status_code=404, detail="Receipt not found")
+    await _tag_groups(session, [receipt])
     return receipt
 
 
@@ -285,12 +315,46 @@ async def list_receipts(
     q: Optional[str] = Query(None, description="Store name or a product on the receipt"),
     product_id: Optional[uuid.UUID] = Query(None),
     transaction_id: Optional[uuid.UUID] = Query(None),
+    account_ids: Optional[List[uuid.UUID]] = Query(None, description="Paid from one of these accounts"),
+    category_ids: Optional[List[uuid.UUID]] = Query(None, description="Paid by a transaction in one of these categories"),
+    uncategorized: bool = Query(False, description="Paid by a transaction without a category"),
+    payee_id: Optional[uuid.UUID] = Query(None, description="Paid by a transaction to this payee"),
+    group_id: Optional[uuid.UUID] = Query(None, description="Paid by a transaction split into this group"),
+    min_amount: Optional[Decimal] = Query(None, ge=0, description="Receipt total at least this"),
+    max_amount: Optional[Decimal] = Query(None, ge=0, description="Receipt total at most this"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     ctx: WorkspaceContext = Depends(read_ctx),
     session: AsyncSession = Depends(get_async_session),
 ):
     filters = [Receipt.workspace_id == ctx.workspace.id]
+    # Filters on the paying transaction, as the transaction list has them:
+    # a receipt passes only when it is paired with a transaction that does.
+    paid_with = [Transaction.workspace_id == ctx.workspace.id]
+    if account_ids:
+        paid_with.append(Transaction.account_id.in_(account_ids))
+    if category_ids and uncategorized:
+        paid_with.append(or_(Transaction.category_id.in_(category_ids), Transaction.category_id.is_(None)))
+    elif category_ids:
+        paid_with.append(Transaction.category_id.in_(category_ids))
+    elif uncategorized:
+        paid_with.append(Transaction.category_id.is_(None))
+    if payee_id:
+        paid_with.append(Transaction.payee_id == payee_id)
+    if group_id:
+        paid_with.append(
+            Transaction.id.in_(
+                select(TransactionSplit.transaction_id)
+                .join(GroupMember, GroupMember.id == TransactionSplit.group_member_id)
+                .where(GroupMember.group_id == group_id)
+            )
+        )
+    if len(paid_with) > 1:
+        filters.append(Receipt.transaction_id.in_(select(Transaction.id).where(*paid_with)))
+    if min_amount is not None:
+        filters.append(Receipt.total >= min_amount)
+    if max_amount is not None:
+        filters.append(Receipt.total <= max_amount)
     if date_from:
         filters.append(Receipt.date >= date_from)
     if date_to:
@@ -339,6 +403,7 @@ async def list_receipts(
             .offset(offset)
         )
     ).all()
+    await _tag_groups(session, [r for r, _ in rows])
     return ReceiptList(items=[_receipt_read(r, n) for r, n in rows], total=total or 0)
 
 

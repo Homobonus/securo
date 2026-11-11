@@ -3083,6 +3083,7 @@
       "autoMatch": "Pair automatically",
       "autoMatched": "{{matched}} receipts paired.",
       "empty": "No receipts yet. Connect a store account to fetch them.",
+      "groupTooltip": "The payment is split in this group. Click to open it.",
       "noneFound": "No receipts match.",
       "column": {
         "date": "Date",

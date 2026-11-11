@@ -136,6 +136,7 @@ class Transaction(Base):
     is_shared: bool = False
     viewer_share = cast(Optional[Decimal], None)
     group_id = cast(Optional[uuid.UUID], None)
+    group_name = cast(Optional[str], None)
     parent_owner_name = cast(Optional[str], None)
     attachment_count: int = 0
     payee_name = cast(Optional[str], None)

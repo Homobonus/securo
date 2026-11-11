@@ -98,6 +98,9 @@ class ReceiptTransactionRead(BaseModel):
     amount: Decimal
     currency: str
     date: date
+    #: The shared-expense group the transaction is split into, if any.
+    group_id: Optional[uuid.UUID] = None
+    group_name: Optional[str] = None
 
 
 class ReceiptRead(BaseModel):

@@ -3194,6 +3194,7 @@
       "autoMatch": "Paruj automatycznie",
       "autoMatched": "Sparowane paragony: {{matched}}.",
       "empty": "Brak paragonów. Połącz konto sklepowe, aby je pobrać.",
+      "groupTooltip": "Płatność jest podzielona w tej grupie. Kliknij, aby ją otworzyć.",
       "noneFound": "Brak pasujących paragonów.",
       "column": {
         "date": "Data",

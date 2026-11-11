@@ -967,6 +967,14 @@ export interface ReceiptListParams {
   q?: string
   product_id?: string
   transaction_id?: string
+  /** Filters on the paying transaction, as in the transaction list. */
+  account_ids?: string[]
+  category_ids?: string[]
+  uncategorized?: boolean
+  payee_id?: string
+  group_id?: string
+  min_amount?: number
+  max_amount?: number
   limit?: number
   offset?: number
 }
@@ -974,7 +982,7 @@ export interface ReceiptListParams {
 /** Store receipts and their pairing with bank transactions. */
 export const receipts = {
   list: async (params: ReceiptListParams = {}): Promise<ReceiptList> => {
-    const { data } = await api.get('/receipts', { params })
+    const { data } = await api.get('/receipts', { params, paramsSerializer: { indexes: null } })
     return data
   },
   get: async (id: string): Promise<ReceiptDetail> => {

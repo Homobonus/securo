@@ -66,12 +66,12 @@ interface TransactionsFilterBarProps {
   onPayeeChange: (value: string) => void
   filterGroupId: string
   onGroupIdChange: (value: string) => void
-  filterType: string
-  onTypeChange: (value: string) => void
-  filterStatus: string
-  onStatusChange: (value: string) => void
-  hideIgnored: boolean
-  onHideIgnoredChange: (value: boolean) => void
+  filterType?: string
+  onTypeChange?: (value: string) => void
+  filterStatus?: string
+  onStatusChange?: (value: string) => void
+  hideIgnored?: boolean
+  onHideIgnoredChange?: (value: boolean) => void
   filterFrom: string
   filterTo: string
   onDateRangeChange: (from: string, to: string) => void
@@ -88,7 +88,15 @@ interface TransactionsFilterBarProps {
   categoryGroups: CategoryGroup[]
   payees: Payee[]
   groups: Group[]
+  /** Filters this list has no use for (receipts are always expenses,
+   * never pending or ignored); they are left out of the menu. */
+  hiddenFilters?: readonly TransactionOnlyFilter[]
+  searchPlaceholder?: string
 }
+
+export type TransactionOnlyFilter = 'type' | 'status' | 'ignored'
+
+const noop = () => {}
 
 function toggleInArray(arr: string[], id: string): string[] {
   return arr.includes(id) ? arr.filter((x) => x !== id) : [...arr, id]
@@ -109,12 +117,12 @@ export function TransactionsFilterBar({
   onPayeeChange,
   filterGroupId,
   onGroupIdChange,
-  filterType,
-  onTypeChange,
-  filterStatus,
-  onStatusChange,
-  hideIgnored,
-  onHideIgnoredChange,
+  filterType = '',
+  onTypeChange = noop,
+  filterStatus = '',
+  onStatusChange = noop,
+  hideIgnored = false,
+  onHideIgnoredChange = noop,
   filterFrom,
   filterTo,
   onDateRangeChange,
@@ -128,6 +136,8 @@ export function TransactionsFilterBar({
   categoryGroups,
   payees,
   groups,
+  hiddenFilters = [],
+  searchPlaceholder,
 }: TransactionsFilterBarProps) {
   const { t, i18n } = useTranslation()
   const locale = useDisplayLocale()
@@ -364,7 +374,7 @@ export function TransactionsFilterBar({
         <SearchWithTagChips
           inputRef={searchRef}
           value={searchInput}
-          placeholder={t('transactions.searchPlaceholder')}
+          placeholder={searchPlaceholder ?? t('transactions.searchPlaceholder')}
           onChange={onSearchChange}
           onSubmit={onSearchSubmit}
         />
@@ -452,6 +462,7 @@ export function TransactionsFilterBar({
                 onHideIgnoredChange={onHideIgnoredChange}
                 onDateRangeChange={onDateRangeChange}
                 onAmountRangeChange={onAmountRangeChange}
+                hidden={hiddenFilters}
                 onApplyAmountRange={applyAmountRange}
                 onOpenCustomRange={openCustomRange}
                 onClearAll={onClearAll}
@@ -723,6 +734,8 @@ export function TransactionsFilterBar({
                   </DropdownMenuPortal>
                 </DropdownMenuSub>
 
+                {!hiddenFilters.includes('type') && (
+                <>
                 {/* Type submenu (single: income, expense or transfer) */}
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger className="gap-2 text-[13px]">
@@ -765,7 +778,11 @@ export function TransactionsFilterBar({
                     </DropdownMenuSubContent>
                   </DropdownMenuPortal>
                 </DropdownMenuSub>
+                </>
+                )}
 
+                {!hiddenFilters.includes('status') && (
+                <>
                 {/* Status submenu (single — posted vs pending) */}
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger className="gap-2 text-[13px]">
@@ -807,7 +824,11 @@ export function TransactionsFilterBar({
                     </DropdownMenuSubContent>
                   </DropdownMenuPortal>
                 </DropdownMenuSub>
+                </>
+                )}
 
+                {!hiddenFilters.includes('ignored') && (
+                <>
                 {/* Ignored rows: a visibility switch rather than a filter
                     value, so it reads as one line instead of a submenu. */}
                 <DropdownMenuItem
@@ -821,6 +842,8 @@ export function TransactionsFilterBar({
                   <span className="flex-1">{t('transactions.hideIgnored')}</span>
                   {hideIgnored && <Check size={13} className="text-primary" />}
                 </DropdownMenuItem>
+                </>
+                )}
 
                 {/* Date range submenu with presets */}
                 <DropdownMenuSub>

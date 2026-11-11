@@ -87,6 +87,8 @@ interface MobileTransactionsFilterMenuProps {
   onApplyAmountRange: () => void
   onOpenCustomRange: () => void
   onClearAll: () => void
+  /** Root entries this list leaves out. */
+  hidden?: readonly MobileFilterView[]
 }
 
 interface RootOption {
@@ -506,7 +508,7 @@ function MobileFilterDetail({
   if (menu.view === 'amount') {
     return <MobileAmountView minAmount={menu.minAmount} maxAmount={menu.maxAmount} setMinAmount={menu.setMinAmount} setMaxAmount={menu.setMaxAmount} onReset={() => resetAmount(menu)} onApply={menu.onApplyAmountRange} />
   }
-  return <MobileFilterRoot options={buildRootOptions(labels, menu.summaries)} hasAnyFilter={menu.hasAnyFilter} onSelect={(view) => openDetail(menu, view)} onClear={() => clearAll(menu)} />
+  return <MobileFilterRoot options={buildRootOptions(labels, menu.summaries).filter((option) => !menu.hidden?.includes(option.view))} hasAnyFilter={menu.hasAnyFilter} onSelect={(view) => openDetail(menu, view)} onClear={() => clearAll(menu)} />
 }
 
 function openDetail(

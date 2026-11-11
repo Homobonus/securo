@@ -7,6 +7,8 @@ import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { TransactionsFilterBar } from '@/components/transactions-filter-bar'
+import { ReceiptGroupBadge } from '@/components/receipts/receipt-group-badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/page-header'
 import { SectionCard, Segmented, TH } from '@/components/invoice-ui'
@@ -16,7 +18,15 @@ import { ReceiptPhotoButton, ReceiptScansPanel } from '@/components/receipts/rec
 import { useReceiptScanAvailability } from '@/hooks/use-receipt-scan-availability'
 import { RetailConnectDialog } from '@/components/receipts/retail-connect-dialog'
 import { RetailConnectionsPanel } from '@/components/receipts/retail-connections-panel'
-import { receipts as receiptsApi, shoppingProducts } from '@/lib/api'
+import {
+  accounts as accountsApi,
+  categories as categoriesApi,
+  categoryGroups as categoryGroupsApi,
+  groups as groupsApi,
+  payees as payeesApi,
+  receipts as receiptsApi,
+  shoppingProducts,
+} from '@/lib/api'
 import { formatCurrency } from '@/lib/format'
 import { formatDate } from '@/lib/date-range-format'
 import { apiErrorMessage, formatQuantity, paidDiffers, sourceLabel, stockLevel, type StockLevel } from '@/lib/receipt-utils'
@@ -122,6 +132,39 @@ export default function ReceiptsPage() {
   )
 }
 
+interface ReceiptFilters {
+  search: string
+  accountIds: string[]
+  categoryIds: string[]
+  uncategorized: boolean
+  payeeId: string
+  groupId: string
+  from: string
+  to: string
+  minAmount: string
+  maxAmount: string
+}
+
+const NO_FILTERS: ReceiptFilters = {
+  search: '',
+  accountIds: [],
+  categoryIds: [],
+  uncategorized: false,
+  payeeId: '',
+  groupId: '',
+  from: '',
+  to: '',
+  minAmount: '',
+  maxAmount: '',
+}
+
+// A receipt is always an expense, never pending or ignored.
+const RECEIPT_HIDDEN_FILTERS = ['type', 'status', 'ignored'] as const
+
+function hasReceiptFilters(filters: ReceiptFilters): boolean {
+  return Object.entries(filters).some(([, value]) => (Array.isArray(value) ? value.length > 0 : Boolean(value)))
+}
+
 function ReceiptsTab({ scanning, onOpenScan }: { scanning: boolean; onOpenScan: (scanId: string) => void }) {
   const { t } = useTranslation()
   const locale = useDisplayLocale()
@@ -129,21 +172,46 @@ function ReceiptsTab({ scanning, onOpenScan }: { scanning: boolean; onOpenScan: 
   const { canWrite } = useWorkspace()
   const queryClient = useQueryClient()
   const [filter, setFilter] = useState<MatchFilter>('all')
-  const [search, setSearch] = useState('')
+  const [filters, setFilters] = useState<ReceiptFilters>(NO_FILTERS)
   const [limit, setLimit] = useState(PAGE)
   const [openId, setOpenId] = useState<string | null>(null)
+  const change = (patch: Partial<ReceiptFilters>) => {
+    setFilters((current) => ({ ...current, ...patch }))
+    setLimit(PAGE)
+  }
 
-  const query = search.trim()
+  // The same catalogs the transaction list filters with; shared cache keys.
+  const { data: accountsList } = useQuery({ queryKey: ['accounts'], queryFn: () => accountsApi.list() })
+  const { data: categoriesList } = useQuery({ queryKey: ['categories'], queryFn: categoriesApi.list })
+  const { data: categoryGroupsList } = useQuery({ queryKey: ['categoryGroups'], queryFn: categoryGroupsApi.list })
+  const { data: payeesList } = useQuery({ queryKey: ['payees'], queryFn: payeesApi.list })
+  const { data: groupsList } = useQuery({
+    queryKey: ['groups', 'all'],
+    queryFn: () => groupsApi.list(true),
+    staleTime: 60_000,
+  })
+
+  const query = filters.search.trim()
   const { data, isLoading } = useQuery({
-    queryKey: ['receipts', 'list', filter, query, limit],
+    queryKey: ['receipts', 'list', filter, filters, limit],
     queryFn: () =>
       receiptsApi.list({
         limit,
         ...(filter === 'all' ? {} : { matched: filter === 'matched' }),
         ...(query ? { q: query } : {}),
+        ...(filters.accountIds.length ? { account_ids: filters.accountIds } : {}),
+        ...(filters.categoryIds.length ? { category_ids: filters.categoryIds } : {}),
+        ...(filters.uncategorized ? { uncategorized: true } : {}),
+        ...(filters.payeeId ? { payee_id: filters.payeeId } : {}),
+        ...(filters.groupId ? { group_id: filters.groupId } : {}),
+        ...(filters.from ? { date_from: filters.from } : {}),
+        ...(filters.to ? { date_to: filters.to } : {}),
+        ...(filters.minAmount ? { min_amount: Number(filters.minAmount) } : {}),
+        ...(filters.maxAmount ? { max_amount: Number(filters.maxAmount) } : {}),
       }),
     placeholderData: keepPreviousData,
   })
+  const filtered = filter !== 'all' || hasReceiptFilters(filters)
 
   const autoMatch = useMutation({
     mutationFn: receiptsApi.autoMatch,
@@ -170,25 +238,44 @@ function ReceiptsTab({ scanning, onOpenScan }: { scanning: boolean; onOpenScan: 
             label: t(`receipts.list.filter.${value}`),
           }))}
         />
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          {canWrite && (
-            <Button size="sm" variant="outline" onClick={() => autoMatch.mutate()} disabled={autoMatch.isPending}>
-              <Link2 className="h-3.5 w-3.5 mr-1.5" />
-              {t('receipts.list.autoMatch')}
-            </Button>
-          )}
-          <Input
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value)
-              setLimit(PAGE)
-            }}
-            placeholder={t('receipts.list.searchPlaceholder')}
-            className="h-9 w-full sm:w-64"
-            data-testid="receipt-search"
-          />
-        </div>
+        {canWrite && (
+          <Button size="sm" variant="outline" onClick={() => autoMatch.mutate()} disabled={autoMatch.isPending}>
+            <Link2 className="h-3.5 w-3.5 mr-1.5" />
+            {t('receipts.list.autoMatch')}
+          </Button>
+        )}
       </div>
+
+      {/* The transaction list's filters, applied to the transaction that
+          paid; the date and amount are the receipt's own. */}
+      <TransactionsFilterBar
+        searchInput={filters.search}
+        onSearchChange={(search) => change({ search })}
+        searchPlaceholder={t('receipts.list.searchPlaceholder')}
+        filterAccountIds={filters.accountIds}
+        onAccountIdsChange={(accountIds) => change({ accountIds })}
+        filterCategoryIds={filters.categoryIds}
+        onCategoryIdsChange={(categoryIds) => change({ categoryIds })}
+        filterUncategorized={filters.uncategorized}
+        onUncategorizedChange={(uncategorized) => change({ uncategorized })}
+        filterPayee={filters.payeeId}
+        onPayeeChange={(payeeId) => change({ payeeId })}
+        filterGroupId={filters.groupId}
+        onGroupIdChange={(groupId) => change({ groupId })}
+        filterFrom={filters.from}
+        filterTo={filters.to}
+        onDateRangeChange={(from, to) => change({ from, to })}
+        filterMinAmount={filters.minAmount}
+        filterMaxAmount={filters.maxAmount}
+        onAmountRangeChange={(minAmount, maxAmount) => change({ minAmount, maxAmount })}
+        onClearAll={() => change(NO_FILTERS)}
+        accounts={accountsList ?? []}
+        categories={categoriesList ?? []}
+        categoryGroups={categoryGroupsList ?? []}
+        payees={payeesList ?? []}
+        groups={groupsList ?? []}
+        hiddenFilters={RECEIPT_HIDDEN_FILTERS}
+      />
 
       {scanning && canWrite && <ReceiptScansPanel onOpen={onOpenScan} />}
 
@@ -203,7 +290,7 @@ function ReceiptsTab({ scanning, onOpenScan }: { scanning: boolean; onOpenScan: 
           <div className="px-5 py-14 text-center" data-testid="receipts-empty">
             <ShoppingBasket className="h-8 w-8 mx-auto text-muted-foreground/50" />
             <p className="mt-3 text-sm text-muted-foreground max-w-sm mx-auto">
-              {query || filter !== 'all' ? t('receipts.list.noneFound') : t('receipts.list.empty')}
+              {filtered ? t('receipts.list.noneFound') : t('receipts.list.empty')}
             </p>
           </div>
         ) : (
@@ -228,7 +315,10 @@ function ReceiptsTab({ scanning, onOpenScan }: { scanning: boolean; onOpenScan: 
                   >
                     <td className="py-3 pl-4 sm:pl-5 text-sm tabular-nums">{formatDate(receipt.date, locale)}</td>
                     <td className="py-3">
-                      <div className="text-sm font-medium truncate">{receipt.store_name ?? sourceLabel(receipt.source)}</div>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-sm font-medium truncate">{receipt.store_name ?? sourceLabel(receipt.source)}</span>
+                        <ReceiptGroupBadge transaction={receipt.transaction} />
+                      </div>
                       <div className="text-xs text-muted-foreground">{sourceLabel(receipt.source)}</div>
                     </td>
                     <td className="py-3 px-4 text-center text-xs text-muted-foreground tabular-nums hidden sm:table-cell">

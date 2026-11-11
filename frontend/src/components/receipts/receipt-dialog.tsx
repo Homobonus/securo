@@ -23,6 +23,7 @@ import { apiErrorMessage, formatQuantity, SCAN_SOURCE, sourceLabel } from '@/lib
 import { useDisplayLocale } from '@/hooks/use-display-locale'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useWorkspace } from '@/contexts/workspace-context'
+import { ReceiptGroupBadge } from '@/components/receipts/receipt-group-badge'
 
 /**
  * One receipt: its lines, and which bank transaction paid for it. A receipt
@@ -124,7 +125,10 @@ export function ReceiptDialog({
               {receipt.transaction ? (
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="text-sm truncate">{receipt.transaction.description}</div>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-sm truncate">{receipt.transaction.description}</span>
+                      <ReceiptGroupBadge transaction={receipt.transaction} />
+                    </div>
                     <div className="text-xs text-muted-foreground">
                       {formatDate(receipt.transaction.date, locale)} ·{' '}
                       {t(`receipts.detail.method.${receipt.match_method ?? 'manual'}`)}

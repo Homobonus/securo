@@ -18,8 +18,11 @@ import pytest_asyncio
 from sqlalchemy import select
 
 from app.models.account import Account
+from app.models.category import Category
+from app.models.group import Group, GroupMember
 from app.models.receipt import Receipt, RetailConnection, ShoppingProduct, ShoppingProductAlias
 from app.models.transaction import Transaction
+from app.models.transaction_split import TransactionSplit
 from app.providers.retail.base import ReceiptData, ReceiptLineData
 from app.services import receipt_service as svc
 from app.services import retail_connection_service as connections
@@ -338,6 +341,46 @@ def fake_lidl(monkeypatch):
     original = connections.new_http_client
     monkeypatch.setattr(connections, "new_http_client", lambda _transport=None: original(transport))
     return state
+
+
+@pytest.mark.asyncio
+async def test_receipts_filter_by_their_payment_and_name_its_group(client, auth_headers, session, test_user, ws_id, account):
+    food = Category(id=uuid.uuid4(), user_id=test_user.id, workspace_id=ws_id, name="Jedzenie", icon="tag", color="#000000")
+    session.add(food)
+    shared = await debit(session, account, date(2026, 10, 2), "24.99")
+    shared.category_id = food.id
+    await debit(session, account, date(2026, 10, 3), "9.99", description="LIDL 2")
+    group = Group(id=uuid.uuid4(), user_id=test_user.id, workspace_id=ws_id, name="Dom", default_currency="PLN")
+    me = GroupMember(id=uuid.uuid4(), group_id=group.id, workspace_id=ws_id, name="Ja", is_self=True)
+    partner = GroupMember(id=uuid.uuid4(), group_id=group.id, workspace_id=ws_id, name="Ola")
+    session.add_all([group, me, partner])
+    await session.flush()
+    session.add_all([
+        TransactionSplit(transaction_id=shared.id, workspace_id=ws_id, group_member_id=me.id, share_amount=Decimal("12.50")),
+        TransactionSplit(transaction_id=shared.id, workspace_id=ws_id, group_member_id=partner.id, share_amount=Decimal("12.49")),
+    ])
+    for external_id, day, total in (("r1", date(2026, 10, 2), "24.99"), ("r2", date(2026, 10, 3), "9.99"), ("r3", date(2026, 10, 4), "50.00")):
+        await svc.ingest_receipt(session, ws_id, "lidl_plus", receipt_data(external_id, day, total, line("Kawa", unit_price=total)))
+    await svc.auto_match(session, ws_id)
+    await session.commit()
+
+    async def totals(**params):
+        resp = await client.get("/api/receipts", headers=auth_headers, params=params)
+        assert resp.status_code == 200, resp.text
+        return sorted(r["total"] for r in resp.json()["items"])
+
+    everything = (await client.get("/api/receipts", headers=auth_headers)).json()["items"]
+    badges = {r["total"]: (r["transaction"] or {}).get("group_name") for r in everything}
+    assert badges == {"24.99": "Dom", "9.99": None, "50.00": None}
+
+    assert await totals(group_id=str(group.id)) == ["24.99"]
+    assert await totals(category_ids=[str(food.id)]) == ["24.99"]
+    assert await totals(uncategorized="true") == ["9.99"]
+    assert await totals(account_ids=[str(account.id)]) == ["24.99", "9.99"]
+    assert await totals(min_amount="10", max_amount="30") == ["24.99"]
+
+    detail = (await client.get(f"/api/receipts/{everything[-1]['id']}", headers=auth_headers)).json()
+    assert detail["transaction"]["group_id"] == str(group.id)
 
 
 class TestApi:

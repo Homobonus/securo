@@ -35,6 +35,10 @@ const api = vi.hoisted(() => ({
     remove: vi.fn(),
   },
   accounts: { list: vi.fn() },
+  categories: { list: vi.fn() },
+  categoryGroups: { list: vi.fn() },
+  payees: { list: vi.fn() },
+  groups: { list: vi.fn() },
   receiptScans: {
     availability: vi.fn(),
     list: vi.fn(),
@@ -52,6 +56,10 @@ vi.mock('@/lib/api', () => ({
   shoppingProducts: api.shoppingProducts,
   retail: api.retail,
   accounts: api.accounts,
+  categories: api.categories,
+  categoryGroups: api.categoryGroups,
+  payees: api.payees,
+  groups: api.groups,
   receiptScans: api.receiptScans,
 }))
 
@@ -149,7 +157,10 @@ beforeEach(() => {
         total: '12.00',
         transaction_id: 'tx',
         match_method: 'auto',
-        transaction: { id: 'tx', account_id: 'a', description: 'BIEDRONKA 1234', amount: '12.00', currency: 'PLN', date: '2026-10-02' },
+        transaction: {
+          id: 'tx', account_id: 'a', description: 'BIEDRONKA 1234', amount: '12.00', currency: 'PLN', date: '2026-10-02',
+          group_id: 'g1', group_name: 'Dom',
+        },
       }),
     ],
     total: 2,
@@ -164,6 +175,10 @@ beforeEach(() => {
   ])
   api.retail.connections.mockResolvedValue([connection])
   api.accounts.list.mockResolvedValue([])
+  api.categories.list.mockResolvedValue([])
+  api.categoryGroups.list.mockResolvedValue([])
+  api.payees.list.mockResolvedValue([])
+  api.groups.list.mockResolvedValue([])
   api.receiptScans.availability.mockResolvedValue({ enabled: false, model: null })
   api.receiptScans.list.mockResolvedValue([])
   api.receiptScans.image.mockResolvedValue(new Blob(['x'], { type: 'image/jpeg' }))
@@ -291,6 +306,23 @@ describe('ReceiptsPage', () => {
     expect(within(rows[0]).getByText('Lidl Kraków')).toBeInTheDocument()
     expect(within(rows[0]).getByText(t('receipts.list.unpaired'))).toBeInTheDocument()
     expect(within(rows[1]).getByText('BIEDRONKA 1234')).toBeInTheDocument()
+    // Paid by a transaction shared with a group: the transaction list's badge.
+    expect(within(rows[1]).getByTestId('receipt-group-badge')).toHaveTextContent('Dom')
+    expect(within(rows[0]).queryByTestId('receipt-group-badge')).not.toBeInTheDocument()
+  })
+
+  it('filters with the transaction list bar, minus what a receipt cannot be', async () => {
+    const { user } = renderWithProviders(<ReceiptsPage />, { route: '/receipts' })
+    await screen.findAllByTestId('receipt-row')
+
+    await user.type(screen.getByPlaceholderText(t('receipts.list.searchPlaceholder')), 'kawa')
+    await waitFor(() => expect(api.receipts.list).toHaveBeenLastCalledWith(expect.objectContaining({ q: 'kawa' })))
+
+    await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.filters') }))
+    const menu = await screen.findByRole('menu')
+    expect(within(menu).getAllByText(t('splitGroups.group')).length).toBeGreaterThan(0)
+    expect(within(menu).queryByText(t('transactions.type'))).not.toBeInTheDocument()
+    expect(within(menu).queryByText(t('transactions.hideIgnored'))).not.toBeInTheDocument()
   })
 
   it('opens a receipt and pairs it with a candidate', async () => {

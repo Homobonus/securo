@@ -1883,6 +1883,9 @@ export interface ReceiptTransaction {
   amount: string
   currency: string
   date: string
+  /** The shared-expense group the transaction is split into, if any. */
+  group_id?: string | null
+  group_name?: string | null
 }
 
 export interface ReceiptItem {
