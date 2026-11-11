@@ -3226,7 +3226,7 @@
         "out": "Prawdopodobnie się skończył",
         "daysLeft": "za ok. {{days}} dni"
       },
-      "paidPerUnit": "zapłacono {{price}} / szt."
+      "paidPerUnit": "zapłacono {{price}} / {{unit}}"
     },
     "detail": {
       "payment": "Zapłacono",
@@ -3268,7 +3268,7 @@
       "runsOut": "Skończy się około",
       "priceHistory": "Historia cen",
       "shelfPrice": "Cena półkowa",
-      "paidPrice": "Zapłacono za sztukę",
+      "paidPrice": "Po rabatach",
       "history": "Zakupy",
       "aliases": "Nazwy na paragonach",
       "aliasesHint": "Każda z tych nazw będzie liczona jako ten produkt także na przyszłych paragonach.",

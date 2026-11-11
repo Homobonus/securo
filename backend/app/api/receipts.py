@@ -433,7 +433,8 @@ def _paid_per_unit(purchases: list[Purchase]) -> Optional[Decimal]:
     quantity = sum((p.quantity for p in purchases), Decimal("0"))
     if quantity <= 0:
         return None
-    return (sum((p.paid for p in purchases), Decimal("0")) / quantity).quantize(Decimal("0.01"))
+    paid = sum((p.exact_paid_unit_price * p.quantity for p in purchases), Decimal("0"))
+    return (paid / quantity).quantize(Decimal("0.01"))
 
 
 def _product_read(
@@ -441,19 +442,28 @@ def _product_read(
 ):
     stats: dict = {}
     if purchases:
-        prices = [p.unit_price for p in purchases]
-        first, last = purchases[0], purchases[-1]
+        # Prices compare only within one currency: a product's figures are
+        # in the currency it was last bought in, from the purchases in it.
+        currency = purchases[-1].currency
+        priced = [p for p in purchases if p.currency == currency]
+        prices = [p.unit_price for p in priced]
+        first, last = priced[0], priced[-1]
         units = {p.unit for p in purchases if p.unit}
+        spent: dict[str, Decimal] = {}
+        for p in purchases:
+            spent[p.currency] = spent.get(p.currency, Decimal("0")) + p.paid
         stats = {
+            "currency": currency,
             "purchase_count": len(purchases),
             "total_quantity": sum((p.quantity for p in purchases), Decimal("0")),
             "unit": units.pop() if len(units) == 1 else None,
-            "total_spent": sum((p.paid for p in purchases), Decimal("0")),
-            "first_purchased_at": first.date,
+            "total_spent": spent[currency],
+            "spent_by_currency": spent,
+            "first_purchased_at": purchases[0].date,
             "last_purchased_at": last.date,
             "last_unit_price": last.unit_price,
             "last_paid_unit_price": _paid_per_unit(
-                [p for p in purchases if p.date == last.date]
+                [p for p in priced if p.date == last.date]
             ),
             "min_unit_price": min(prices),
             "max_unit_price": max(prices),
@@ -504,6 +514,7 @@ async def _product_detail(session: AsyncSession, product: ShoppingProduct) -> Sh
             unit=p.unit,
             store_name=p.store_name,
             source=p.source,
+            currency=p.currency,
         )
         for p in purchases
     ]

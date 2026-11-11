@@ -160,7 +160,11 @@ class ShoppingProductRead(BaseModel):
     purchase_count: int = 0
     total_quantity: Decimal = Decimal("0")
     unit: Optional[str] = None
+    #: Currency of every price below: the one the product was last bought
+    #: in. Purchases in another currency count only in `spent_by_currency`.
+    currency: str = "PLN"
     total_spent: Decimal = Decimal("0")
+    spent_by_currency: dict[str, Decimal] = {}
     first_purchased_at: Optional[date] = None
     last_purchased_at: Optional[date] = None
     last_unit_price: Optional[Decimal] = None
@@ -193,6 +197,7 @@ class PricePointRead(BaseModel):
     unit: Optional[str] = None
     store_name: Optional[str] = None
     source: str
+    currency: str = "PLN"
 
 
 class ShoppingProductDetail(ShoppingProductRead):

@@ -23,7 +23,7 @@ import { SectionCard, SectionHeader, TH } from '@/components/invoice-ui'
 import { shoppingProducts } from '@/lib/api'
 import { formatCurrency } from '@/lib/format'
 import { formatDate } from '@/lib/date-range-format'
-import { apiErrorMessage, formatQuantity, sourceLabel, stockLevel } from '@/lib/receipt-utils'
+import { apiErrorMessage, formatQuantity, paidDiffers, sourceLabel, stockLevel } from '@/lib/receipt-utils'
 import { cn } from '@/lib/utils'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
@@ -63,13 +63,14 @@ export default function ShoppingProductDetailPage() {
     onError,
   })
 
-  const currency = 'PLN'
-  const money = (value: string | number | null | undefined) =>
-    value === null || value === undefined ? '—' : mask(formatCurrency(Number(value), currency, locale))
+  const currency = product?.currency ?? 'PLN'
+  const money = (value: string | number | null | undefined, code = currency) =>
+    value === null || value === undefined ? '—' : mask(formatCurrency(Number(value), code, locale))
 
+  // One axis, one currency: purchases made in another one stay in the table.
   const chartData = useMemo(
     () =>
-      (product?.price_history ?? []).map((p) => ({
+      (product?.price_history ?? []).filter((p) => p.currency === product?.currency).map((p) => ({
         date: p.date,
         price: Number(p.unit_price),
         paid: Number(p.effective_unit_price),
@@ -129,8 +130,8 @@ export default function ShoppingProductDetailPage() {
           label={t('receipts.product.lastPrice')}
           value={money(product.last_unit_price)}
           hint={
-            product.last_paid_unit_price !== null && product.last_paid_unit_price !== product.last_unit_price
-              ? t('receipts.products.paidPerUnit', { price: money(product.last_paid_unit_price) })
+            paidDiffers(product)
+              ? t('receipts.products.paidPerUnit', { price: money(product.last_paid_unit_price), unit })
               : undefined
           }
         />
@@ -138,7 +139,14 @@ export default function ShoppingProductDetailPage() {
           label={t('receipts.product.priceRange')}
           value={`${money(product.min_unit_price)} – ${money(product.max_unit_price)}`}
         />
-        <Stat label={t('receipts.product.totalSpent')} value={money(product.total_spent)} />
+        <Stat
+          label={t('receipts.product.totalSpent')}
+          value={
+            Object.keys(product.spent_by_currency ?? {}).length > 1
+              ? Object.entries(product.spent_by_currency).map(([code, value]) => money(value, code)).join(' + ')
+              : money(product.total_spent)
+          }
+        />
         <Stat
           label={t('receipts.product.purchases')}
           value={`${product.purchase_count} · ${formatQuantity(product.total_quantity, locale)} ${product.unit ?? ''}`}
@@ -249,8 +257,8 @@ export default function ShoppingProductDetailPage() {
                   <td className="py-2.5 text-right text-xs tabular-nums">
                     {formatQuantity(p.quantity, locale)} {p.unit ?? ''}
                   </td>
-                  <td className="py-2.5 text-right text-sm tabular-nums">{money(p.unit_price)}</td>
-                  <td className="py-2.5 pr-4 sm:pr-5 text-right text-sm tabular-nums">{money(p.effective_unit_price)}</td>
+                  <td className="py-2.5 text-right text-sm tabular-nums">{money(p.unit_price, p.currency)}</td>
+                  <td className="py-2.5 pr-4 sm:pr-5 text-right text-sm tabular-nums">{money(p.effective_unit_price, p.currency)}</td>
                 </tr>
               ))}
             </tbody>

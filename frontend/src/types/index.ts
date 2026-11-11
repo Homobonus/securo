@@ -1988,7 +1988,11 @@ export interface ShoppingProduct {
   purchase_count: number
   total_quantity: string
   unit: string | null
+  /** Currency of every price on the product: the one it was last bought in. */
+  currency: string
   total_spent: string
+  /** Spent per currency, when bought in more than one (abroad, say). */
+  spent_by_currency: Record<string, string>
   first_purchased_at: string | null
   last_purchased_at: string | null
   last_unit_price: string | null
@@ -2010,6 +2014,7 @@ export interface ShoppingPricePoint {
   unit: string | null
   store_name: string | null
   source: string
+  currency: string
 }
 
 export interface ShoppingProductDetail extends ShoppingProduct {

@@ -364,16 +364,30 @@ class Purchase:
     discount: Decimal
     store_name: Optional[str]
     source: str
+    currency: str = "PLN"
 
     @property
     def paid(self) -> Decimal:
         return self.total - self.discount
 
     @property
+    def exact_paid_unit_price(self) -> Decimal:
+        """The shelf price scaled by the share of the line actually paid.
+
+        Not `paid / quantity`: a weighed line's value is rounded to the
+        cent (0.514 kg at 14.99 is 7.70), so dividing it back gives 14.98
+        and invents a discount nobody got. Unrounded, so several lines
+        can be averaged before rounding once.
+        """
+        if self.total > 0:
+            return self.unit_price * self.paid / self.total
+        if self.quantity > 0:
+            return self.paid / self.quantity
+        return self.unit_price
+
+    @property
     def effective_unit_price(self) -> Decimal:
-        if self.quantity <= 0:
-            return self.unit_price
-        return (self.paid / self.quantity).quantize(Decimal("0.01"))
+        return self.exact_paid_unit_price.quantize(Decimal("0.01"))
 
 
 @dataclass
@@ -398,6 +412,8 @@ def consumption(purchases: list[Purchase], today: date) -> Consumption:
     when it will run out. Two shopping days are the minimum to say
     anything.
     """
+    # Money only adds up within one currency; the timing works regardless.
+    single_currency = len({p.currency for p in purchases}) <= 1
     by_day: dict[date, tuple[Decimal, Decimal]] = {}
     for p in purchases:
         quantity, paid = by_day.get(p.date, (Decimal("0"), Decimal("0")))
@@ -418,7 +434,7 @@ def consumption(purchases: list[Purchase], today: date) -> Consumption:
         avg_days_between=round(span / (len(days) - 1), 1),
         days_per_unit=round(days_per_unit, 2),
         units_per_month=round(30.0 / days_per_unit, 2),
-        monthly_cost=(spent / span * 30).quantize(Decimal("0.01")),
+        monthly_cost=(spent / span * 30).quantize(Decimal("0.01")) if single_currency else None,
         estimated_depletion=depletion,
         days_left=(depletion - today).days,
     )
@@ -439,6 +455,7 @@ async def purchases_by_product(
             ReceiptItem.discount,
             Receipt.store_name,
             Receipt.source,
+            Receipt.currency,
         )
         .join(Receipt, Receipt.id == ReceiptItem.receipt_id)
         .where(ReceiptItem.workspace_id == workspace_id, ReceiptItem.product_id.is_not(None))
@@ -459,6 +476,7 @@ async def purchases_by_product(
                 discount=Decimal(row[7] or 0),
                 store_name=row[8],
                 source=row[9],
+                currency=row[10] or "PLN",
             )
         )
     return grouped

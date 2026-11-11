@@ -248,6 +248,13 @@ class TestConsumption:
         assert result.days_per_unit == 15.0
         assert result.estimated_depletion == date(2026, 10, 16)
 
+    def test_no_monthly_cost_across_currencies(self):
+        abroad = purchase(date(2026, 9, 15))
+        abroad.currency = "EUR"
+        result = svc.consumption([purchase(date(2026, 9, 1)), abroad, purchase(date(2026, 9, 29))], date(2026, 10, 6))
+        assert result.days_per_unit == 14.0
+        assert result.monthly_cost is None
+
 
 @pytest.mark.asyncio
 async def test_the_last_paid_price_counts_every_line_of_that_day(client, auth_headers, session, ws_id):
@@ -260,6 +267,39 @@ async def test_the_last_paid_price_counts_every_line_of_that_day(client, auth_he
     product = (await client.get("/api/shopping-products", headers=auth_headers)).json()[0]
     assert product["last_unit_price"] == "69.99"
     assert product["last_paid_unit_price"] == "49.00"
+
+
+@pytest.mark.asyncio
+async def test_a_weighed_line_rounded_to_the_cent_is_not_a_discount(client, auth_headers, session, ws_id):
+    # 0.514 kg at 14.99 is 7.70; 7.70 / 0.514 would say 14.98 was paid.
+    await svc.ingest_receipt(session, ws_id, "scan", receipt_data(
+        "r1", date(2026, 11, 5), "7.70", line("NOVILHO RABADILHA", quantity="0.514", unit_price="14.99"),
+    ))
+    await session.commit()
+    product = (await client.get("/api/shopping-products", headers=auth_headers)).json()[0]
+    assert product["last_unit_price"] == product["last_paid_unit_price"] == "14.99"
+    assert product["total_spent"] == "7.70"
+    detail = (await client.get(f"/api/shopping-products/{product['id']}", headers=auth_headers)).json()
+    assert detail["price_history"][0]["effective_unit_price"] == "14.99"
+
+
+@pytest.mark.asyncio
+async def test_prices_stay_in_the_currency_they_were_paid_in(client, auth_headers, session, ws_id):
+    pln = receipt_data("r1", date(2026, 10, 1), "6.00", line("Poncha", unit_price="6.00"))
+    eur = receipt_data("r2", date(2026, 11, 7), "16.00", line("Poncha", quantity="4", unit_price="4.00"))
+    eur.currency = "EUR"
+    for data in (pln, eur):
+        await svc.ingest_receipt(session, ws_id, "scan", data)
+    await session.commit()
+    product = (await client.get("/api/shopping-products", headers=auth_headers)).json()[0]
+    # Figures in the last purchase's currency, never 6 zł and 4 € in one range.
+    assert product["currency"] == "EUR"
+    assert (product["min_unit_price"], product["max_unit_price"]) == ("4.00", "4.00")
+    assert product["price_change_pct"] == 0.0
+    assert product["total_spent"] == "16.00"
+    assert product["spent_by_currency"] == {"PLN": "6.00", "EUR": "16.00"}
+    detail = (await client.get(f"/api/shopping-products/{product['id']}", headers=auth_headers)).json()
+    assert [p["currency"] for p in detail["price_history"]] == ["PLN", "EUR"]
 
 
 # ---------------------------------------------------------------------------

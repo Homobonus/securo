@@ -100,7 +100,9 @@ function product(overrides: Partial<ShoppingProduct> = {}): ShoppingProduct {
     purchase_count: 3,
     total_quantity: '3',
     unit: 'szt',
+    currency: 'PLN',
     total_spent: '74.97',
+    spent_by_currency: { PLN: '74.97' },
     first_purchased_at: '2026-09-01',
     last_purchased_at: '2026-09-29',
     last_unit_price: '26.99',
@@ -380,8 +382,8 @@ describe('ShoppingProductDetailPage', () => {
       ...product(),
       aliases: [{ id: 'a1', source: 'lidl_plus', name: 'Kawa ziarn.' }],
       price_history: [
-        { receipt_id: 'r1', date: '2026-09-01', unit_price: '22.99', effective_unit_price: '22.99', quantity: '1', unit: 'szt', store_name: 'Lidl', source: 'lidl_plus' },
-        { receipt_id: 'r2', date: '2026-09-29', unit_price: '26.99', effective_unit_price: '21.99', quantity: '1', unit: 'szt', store_name: 'Lidl', source: 'lidl_plus' },
+        { receipt_id: 'r1', date: '2026-09-01', unit_price: '22.99', effective_unit_price: '22.99', quantity: '1', unit: 'szt', store_name: 'Lidl', source: 'lidl_plus', currency: 'PLN' },
+        { receipt_id: 'r2', date: '2026-09-29', unit_price: '26.99', effective_unit_price: '21.99', quantity: '1', unit: 'szt', store_name: 'Lidl', source: 'lidl_plus', currency: 'PLN' },
       ],
     }
     api.shoppingProducts.get.mockResolvedValue(detail)
@@ -390,6 +392,37 @@ describe('ShoppingProductDetailPage', () => {
     expect(await screen.findByTestId('shopping-product-consumption')).toBeInTheDocument()
     expect(screen.getAllByTestId('price-point')).toHaveLength(2)
     expect(screen.getByText(t('receipts.product.daysPerUnit', { days: '14', unit: 'szt' }))).toBeInTheDocument()
+  })
+
+  it('keeps prices in the currency they were paid in', async () => {
+    const detail: ShoppingProductDetail = {
+      ...product({
+        unit: 'kg',
+        currency: 'EUR',
+        last_unit_price: '14.99',
+        last_paid_unit_price: '14.99',
+        min_unit_price: '14.99',
+        max_unit_price: '14.99',
+        total_spent: '7.70',
+        spent_by_currency: { PLN: '6.00', EUR: '7.70' },
+        consumption: null,
+        track_consumption: false,
+      }),
+      aliases: [],
+      price_history: [
+        { receipt_id: 'r1', date: '2026-10-01', unit_price: '6.00', effective_unit_price: '6.00', quantity: '1', unit: null, store_name: 'Lidl', source: 'scan', currency: 'PLN' },
+        { receipt_id: 'r2', date: '2026-11-05', unit_price: '14.99', effective_unit_price: '14.99', quantity: '0.514', unit: 'kg', store_name: 'Gaula', source: 'scan', currency: 'EUR' },
+      ],
+    }
+    api.shoppingProducts.get.mockResolvedValue(detail)
+    renderWithProviders(<ShoppingProductDetailPage />, { path: '/receipts/products/:id', route: '/receipts/products/p1' })
+
+    const points = await screen.findAllByTestId('price-point')
+    // Newest first: the euro purchase, then the złoty one.
+    expect(points[0]).toHaveTextContent('€')
+    expect(points[1]).not.toHaveTextContent('€')
+    // Spent in both currencies, listed side by side, never added together.
+    expect(screen.getByText(/\+/)).toHaveTextContent('€')
   })
 
   it('turns tracking on', async () => {

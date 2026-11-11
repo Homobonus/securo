@@ -3276,7 +3276,7 @@
         "out": "Probably used up",
         "daysLeft": "in ~{{days}} days"
       },
-      "paidPerUnit": "paid {{price}} / unit"
+      "paidPerUnit": "paid {{price}} / {{unit}}"
     },
     "detail": {
       "payment": "Paid with",
@@ -3318,7 +3318,7 @@
       "runsOut": "Runs out around",
       "priceHistory": "Price history",
       "shelfPrice": "Shelf price",
-      "paidPrice": "Paid per unit",
+      "paidPrice": "After discounts",
       "history": "Purchases",
       "aliases": "Names on receipts",
       "aliasesHint": "Every printed name here counts as this product on future receipts too.",

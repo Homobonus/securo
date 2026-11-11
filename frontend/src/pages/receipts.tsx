@@ -19,7 +19,7 @@ import { RetailConnectionsPanel } from '@/components/receipts/retail-connections
 import { receipts as receiptsApi, shoppingProducts } from '@/lib/api'
 import { formatCurrency } from '@/lib/format'
 import { formatDate } from '@/lib/date-range-format'
-import { apiErrorMessage, formatQuantity, sourceLabel, stockLevel, type StockLevel } from '@/lib/receipt-utils'
+import { apiErrorMessage, formatQuantity, paidDiffers, sourceLabel, stockLevel, type StockLevel } from '@/lib/receipt-utils'
 import { cn } from '@/lib/utils'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
@@ -301,7 +301,8 @@ function ProductsTab() {
     })
   }, [list, search])
 
-  const money = (value: string | null) => (value === null ? '—' : mask(formatCurrency(Number(value), 'PLN', locale)))
+  const money = (value: string | null, currency: string) =>
+    value === null ? '—' : mask(formatCurrency(Number(value), currency, locale))
 
   return (
     <>
@@ -374,13 +375,15 @@ function ProductsTab() {
                         {product.purchase_count}
                       </td>
                       <td className="py-3 text-right text-sm tabular-nums">
-                        {money(product.last_unit_price)}
-                        {product.last_paid_unit_price !== null &&
-                          product.last_paid_unit_price !== product.last_unit_price && (
-                            <div className="text-[11px] text-emerald-600 dark:text-emerald-400" data-testid="last-paid-price">
-                              {t('receipts.products.paidPerUnit', { price: money(product.last_paid_unit_price) })}
-                            </div>
-                          )}
+                        {money(product.last_unit_price, product.currency)}
+                        {paidDiffers(product) && (
+                          <div className="text-[11px] text-emerald-600 dark:text-emerald-400" data-testid="last-paid-price">
+                            {t('receipts.products.paidPerUnit', {
+                              price: money(product.last_paid_unit_price, product.currency),
+                              unit: product.unit ?? t('receipts.product.unitFallback'),
+                            })}
+                          </div>
+                        )}
                       </td>
                       <td className="py-3 text-right text-xs tabular-nums hidden md:table-cell">
                         {change === null || change === 0 ? (

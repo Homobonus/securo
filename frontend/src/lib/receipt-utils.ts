@@ -1,6 +1,6 @@
 // The instance the app configures in @/lib/i18n; imported bare so this stays usable outside a browser.
 import i18n from 'i18next'
-import type { ReceiptScanLine, RetailConnectionStatus, ShoppingConsumption } from '@/types'
+import type { ReceiptScanLine, RetailConnectionStatus, ShoppingConsumption, ShoppingProduct } from '@/types'
 
 /** Store chains by provider id. Receipts keep the provider as their source. */
 export const RETAIL_SOURCE_LABELS: Record<string, string> = {
@@ -11,6 +11,13 @@ export const RETAIL_SOURCE_LABELS: Record<string, string> = {
 
 /** Receipts read off a photo; any shop. */
 export const SCAN_SOURCE = 'scan'
+
+/** Whether the last paid price is worth showing next to the shelf price:
+ *  only when discounts actually moved it, compared as amounts. */
+export function paidDiffers(product: Pick<ShoppingProduct, 'last_unit_price' | 'last_paid_unit_price'>): boolean {
+  if (product.last_paid_unit_price === null || product.last_unit_price === null) return false
+  return Number(product.last_paid_unit_price) !== Number(product.last_unit_price)
+}
 
 export function sourceLabel(source: string): string {
   if (source === SCAN_SOURCE) return i18n.t('receipts.scan.source')
