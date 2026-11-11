@@ -1,6 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
 import { useAutoUpdateCheck } from '@/hooks/use-auto-update-check'
 
+/**
+ * Off in this fork. The check asks GitHub for the *upstream* project's
+ * latest release from the visitor's browser: it leaks the visitor's IP to
+ * GitHub on every load, and offers an upstream version this fork must not
+ * be replaced with. The fork updates by pulling its own images.
+ */
+export const UPDATE_CHECK_AVAILABLE = false
+
 const LATEST_RELEASE_URL =
   'https://api.github.com/repos/securo-finance/securo/releases/latest'
 
@@ -29,7 +37,7 @@ export function useLatestRelease() {
   return useQuery<LatestRelease | null>({
     queryKey: ['latest-release', 'securo-finance/securo'],
     queryFn: fetchLatestRelease,
-    enabled,
+    enabled: UPDATE_CHECK_AVAILABLE && enabled,
     staleTime: SIX_HOURS,
     gcTime: SIX_HOURS,
     retry: 1,

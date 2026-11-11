@@ -54,6 +54,7 @@ import {
   WORKSPACE_KIND_LABEL_KEY,
 } from '@/lib/workspace-kinds'
 import type { Workspace, WorkspaceKind } from '@/types'
+import { UPDATE_CHECK_AVAILABLE } from '@/hooks/use-latest-release'
 
 const ROLE_LABEL_KEY: Record<string, string> = {
   owner: 'workspace.roleOwner',
@@ -291,13 +292,15 @@ export function WorkspaceSwitcher({
             </DropdownMenuItem>
           )}
 
-          <DropdownMenuItem
-            onClick={onUpdateAvailable}
-            className="flex items-center gap-2"
-          >
-            <Download size={14} />
-            {t('update.menuItem')}
-          </DropdownMenuItem>
+          {UPDATE_CHECK_AVAILABLE && (
+            <DropdownMenuItem
+              onClick={onUpdateAvailable}
+              className="flex items-center gap-2"
+            >
+              <Download size={14} />
+              {t('update.menuItem')}
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem
             onClick={() => window.open(DOCS_URL, '_blank', 'noopener,noreferrer')}
             className="flex items-center gap-2"
