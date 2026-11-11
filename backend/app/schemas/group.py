@@ -80,12 +80,23 @@ class GroupBalanceLine(BaseModel):
     amount_in_default_currency: Decimal
 
 
+class GroupBalances(BaseModel):
+    group_id: uuid.UUID
+    self_member_id: Optional[uuid.UUID] = None
+    default_currency: str
+    lines: list[GroupBalanceLine] = []
+    #: Some share or settlement had no exchange rate and counted 1:1.
+    fx_fallback: bool = False
+
+
 class GroupSummaryMonth(BaseModel):
-    month: str  # YYYY-MM
+    # "YYYY-MM"; the client formats it for display.
+    month: str
     total: Decimal
 
 
 class GroupSummaryCategory(BaseModel):
+    # Null for transactions with no category.
     category_id: Optional[uuid.UUID] = None
     name: Optional[str] = None
     color: Optional[str] = None
@@ -93,27 +104,10 @@ class GroupSummaryCategory(BaseModel):
 
 
 class GroupSummary(BaseModel):
-    """Every transaction of a group, added up in the group's own currency.
-
-    Each row is converted at the rate of its own date, so a trip kept in
-    EUR shows EUR whatever currency the cards were charged in.
-    """
-
     group_id: uuid.UUID
-    currency: str
-    transaction_count: int
-    total: Decimal
-    by_month: list[GroupSummaryMonth] = []
-    #: Debits only: what was spent, by category.
-    by_category: list[GroupSummaryCategory] = []
-    #: True when some row had no rate and was counted 1:1.
-    fx_fallback: bool = False
-
-
-class GroupBalances(BaseModel):
-    group_id: uuid.UUID
-    self_member_id: Optional[uuid.UUID] = None
     default_currency: str
-    lines: list[GroupBalanceLine] = []
-    #: Some share or settlement had no exchange rate and counted 1:1.
+    total_moved: Decimal
+    months: list[GroupSummaryMonth] = []
+    categories: list[GroupSummaryCategory] = []
+    #: True when some row had no exchange rate and was counted 1:1.
     fx_fallback: bool = False

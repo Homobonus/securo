@@ -26,7 +26,12 @@ from app.schemas.group_settlement import (
     GroupSettlementUpdate,
 )
 from app.schemas.transaction import TransactionRead
-from app.services import balance_service, group_service, settlement_service
+from app.services import (
+    balance_service,
+    group_service,
+    group_summary_service,
+    settlement_service,
+)
 
 router = APIRouter(prefix="/api/groups", tags=["groups"])
 
@@ -199,8 +204,14 @@ async def get_summary(
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """All of the group's transactions added up in the group's currency."""
-    summary = await group_service.summarize(session, group_id, ctx.workspace.id, ctx.user_id)
+    """Spending aggregates for the whole group.
+
+    Separate from /transactions, which is a capped recent-activity list:
+    totals have to see every split, not the last page of them.
+    """
+    summary = await group_summary_service.compute_summary(
+        session, group_id, ctx.workspace.id, ctx.user_id
+    )
     if summary is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
     return summary

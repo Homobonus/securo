@@ -55,11 +55,10 @@ const trip: Group = {
 function summary(overrides: Partial<GroupSummary> = {}): GroupSummary {
   return {
     group_id: 'trip',
-    currency: 'EUR',
-    transaction_count: 2,
-    total: '140.00',
-    by_month: [{ month: '2026-07', total: '140.00' }],
-    by_category: [{ category_id: null, name: null, color: null, total: '140.00' }],
+    default_currency: 'EUR',
+    total_moved: 140,
+    months: [{ month: '2026-07', total: 140 }],
+    categories: [{ category_id: null, name: null, color: null, total: 140 }],
     fx_fallback: false,
     ...overrides,
   }

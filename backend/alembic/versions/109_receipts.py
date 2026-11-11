@@ -10,21 +10,27 @@
 
 All new tables; no existing row changes.
 
-Revision ID: 099
-Revises: 098
+Revision ID: 109
+Revises: 108
+
+This fork first shipped it as 099, a number upstream later gave to
+099_loan_terms; alembic/env.py moves such a database back to 098 so
+upstream's 099-108 run, and this migration then finds its tables there.
 """
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision = "099"
-down_revision = "098"
+revision = "109"
+down_revision = "108"
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
+    if sa.inspect(op.get_bind()).has_table("receipts"):
+        return  # created under this fork's old number (099)
     op.create_table(
         "retail_connections",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),

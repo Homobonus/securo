@@ -1,6 +1,7 @@
 import asyncio
 from logging.config import fileConfig
 
+import sqlalchemy as sa
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
@@ -38,7 +39,32 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+def _undo_fork_revision_numbers(connection: Connection) -> None:
+    """Move a database stamped with this fork's old migration numbers to 098.
+
+    The fork shipped its receipts migrations as 099 and 100, numbers
+    upstream later used for 099_loan_terms and 100_registration_setting.
+    Such a database says 099/100 while upstream's two never ran, so alembic
+    would skip them. Their mark: the receipts table exists, the loan columns
+    of upstream's 099 do not. From 098, upstream's 099-108 run, then the
+    fork's renumbered 109/110 find their tables and leave them be.
+    """
+    inspector = sa.inspect(connection)
+    if not inspector.has_table("alembic_version") or not inspector.has_table("receipts"):
+        return
+    current = connection.execute(sa.text("SELECT version_num FROM alembic_version")).scalars().all()
+    if current not in (["099"], ["100"]):
+        return
+    if any(column["name"] == "loan_kind" for column in inspector.get_columns("accounts")):
+        return
+    connection.execute(sa.text("UPDATE alembic_version SET version_num = '098'"))
+
+
 def do_run_migrations(connection: Connection) -> None:
+    _undo_fork_revision_numbers(connection)
+    # The check above began a transaction; alembic leaves one it did not
+    # begin uncommitted, which would roll every migration back on close.
+    connection.commit()
     context.configure(connection=connection, target_metadata=target_metadata)
 
     with context.begin_transaction():

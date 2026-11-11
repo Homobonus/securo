@@ -171,15 +171,18 @@ export default function GroupDetailPage() {
 
   // Linked members get a read-only view of the group.
   const isOwner = group?.is_owner ?? false
-  // The member that represents the current viewer (when linked).
+  // The member that represents the current viewer. The server sets
+  // is_self per request: the member linked to the viewer, or the owner's
+  // own unlinked member when the viewer is the owner.
   const viewerMember = useMemo(
-    () => group?.members.find((m) => user && m.linked_user_id === user.id),
-    [group?.members, user],
-  )
-  // The "self" member is the owner-payer of the group's transactions.
-  const ownerMember = useMemo(
     () => group?.members.find((m) => m.is_self),
     [group?.members],
+  )
+  // The owner's member, when the owner is in the group under their account.
+  const ownerUserId = group?.user_id
+  const ownerMember = useMemo(
+    () => group?.members.find((m) => m.linked_user_id === ownerUserId),
+    [group?.members, ownerUserId],
   )
 
   const { data: balances } = useQuery({
@@ -194,15 +197,17 @@ export default function GroupDetailPage() {
     enabled: !!groupId,
   })
 
+  // The recent-activity list stays capped — it feeds the "Recent
+  // transactions" card and nothing else.
   const { data: groupTxs } = useQuery({
     queryKey: ['groups', groupId, 'transactions'],
     queryFn: () => groupsApi.transactions(groupId, 20),
     enabled: !!groupId,
   })
 
-  // Totals come from the server: over every row, not the 20 listed, and in
-  // the group's currency, not the viewer's.
-  const { data: summary } = useQuery({
+  // Totals come from the server so they describe the whole group rather
+  // than whatever happens to be on the first page of the list.
+  const { data: summary, isError: summaryFailed } = useQuery({
     queryKey: ['groups', groupId, 'summary'],
     queryFn: () => groupsApi.summary(groupId),
     enabled: !!groupId,
@@ -419,80 +424,97 @@ export default function GroupDetailPage() {
   // ── KPIs ─────────────────────────────────────────────────────
   const groupCurrency = group?.default_currency ?? 'USD'
 
-  // Every row in the group's currency, converted server-side at each
-  // row's date. Summing amount_primary here added the viewer's own
-  // currency and labelled it with the group's.
-  const totalMoved = Number(summary?.total ?? 0)
+  // One flag for everything the summary feeds. Without it the KPI reads
+  // 0 while the request is still in flight, and a failed background
+  // refetch leaves TanStack's cached data in place — so the KPI would say
+  // "—" while the charts below kept drawing the stale numbers.
+  const summaryReady = !!summary && !summaryFailed
+  const totalMoved = Number(summary?.total_moved ?? 0)
 
-  // Balance lines come from the server already netted, in the group's
-  // currency, and projected onto whoever is looking: `member_id` is the
-  // other person, a positive amount means they owe the viewer, a negative
-  // one that the viewer owes them. The same reading holds for the owner
-  // and for a linked member, so there is one code path for both.
+  // Balance lines are already relative to the viewer: a positive amount
+  // means that member owes the viewer, a negative one that the viewer
+  // owes them. KPIs roll up across currencies using each line's
+  // amount_in_default_currency (FX-converted server-side). Filtering by
+  // a single currency would otherwise hide debts in another currency
+  // — e.g. a EUR-only line wouldn't show up for a USD-default group.
+  //
+  // A viewer who is neither the owner nor in the group (a workspace
+  // member) has no member of their own. When the owner isn't a member
+  // either, the lines come back from the owner's side: they are the
+  // owner's debts, so they are shown in the third person and kept out of
+  // the viewer's KPIs.
+  const ownerSideLines = !isOwner && !!balances && !balances.self_member_id
+  const viewerLines = useMemo(
+    () => (balances && !ownerSideLines ? balances.lines : []),
+    [balances, ownerSideLines],
+  )
+
   const owedToViewer = useMemo(
     () =>
-      (balances?.lines ?? [])
-        .filter((l) => Number(l.amount) > 0)
+      viewerLines
+        .filter((l) => l.amount > 0)
         .reduce((s, l) => s + Number(l.amount_in_default_currency), 0),
-    [balances],
+    [viewerLines],
   )
 
   const viewerOwes = useMemo(
     () =>
-      (balances?.lines ?? [])
-        .filter((l) => Number(l.amount) < 0)
-        .reduce((s, l) => s + Math.abs(Number(l.amount_in_default_currency)), 0),
-    [balances],
+      Math.abs(
+        viewerLines
+          .filter((l) => l.amount < 0)
+          .reduce((s, l) => s + Number(l.amount_in_default_currency), 0),
+      ),
+    [viewerLines],
   )
 
+  // Per-line breakdown for the two debt KPIs. Each row shows the other
+  // party's name and the amount in its native currency — so a EUR line
+  // stays "€100" instead of being lossy-rolled into the USD KPI total.
   const memberNameById = useMemo(() => {
     const map = new Map<string, string>()
     for (const m of group?.members ?? []) map.set(m.id, m.name)
     return map
   }, [group?.members])
 
-  const owedToViewerBreakdown = useMemo<KpiBreakdownItem[]>(
-    () =>
-      (balances?.lines ?? [])
-        .filter((l) => Number(l.amount) > 0)
-        .map((l) => ({
-          name: memberNameById.get(l.member_id) ?? '—',
-          amountText: formatCurrency(Number(l.amount), l.currency, locale),
-        })),
-    [balances, memberNameById, locale],
-  )
+  const owedToViewerBreakdown = useMemo<KpiBreakdownItem[]>(() => {
+    return viewerLines
+      .filter((l) => l.amount > 0)
+      .map((l) => ({
+        name: memberNameById.get(l.member_id) ?? '—',
+        amountText: formatCurrency(Number(l.amount), l.currency, locale),
+      }))
+  }, [viewerLines, memberNameById, locale])
 
-  const viewerOwesBreakdown = useMemo<KpiBreakdownItem[]>(
-    () =>
-      (balances?.lines ?? [])
-        .filter((l) => Number(l.amount) < 0)
-        .map((l) => ({
-          name: memberNameById.get(l.member_id) ?? '—',
-          amountText: formatCurrency(Math.abs(Number(l.amount)), l.currency, locale),
-        })),
-    [balances, memberNameById, locale],
-  )
+  const viewerOwesBreakdown = useMemo<KpiBreakdownItem[]>(() => {
+    return viewerLines
+      .filter((l) => l.amount < 0)
+      .map((l) => ({
+        name: memberNameById.get(l.member_id) ?? '—',
+        amountText: formatCurrency(Math.abs(Number(l.amount)), l.currency, locale),
+      }))
+  }, [viewerLines, memberNameById, locale])
 
-  const monthlyData = useMemo(
-    () =>
-      (summary?.by_month ?? []).map(({ month, total }) => ({
-        month: new Date(month + '-01').toLocaleString(dateLocale, { month: 'short' }),
-        total: Number(total),
-      })),
-    [summary, dateLocale],
-  )
+  const monthlyData = useMemo(() => {
+    if (!summary) return []
+    return summary.months.map(({ month, total }) => ({
+      // Local date from the parts: new Date('2026-03-01') is UTC midnight,
+      // which lands in February for anyone west of Greenwich.
+      month: new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 1)
+        .toLocaleString(dateLocale, { month: 'short' }),
+      total: Number(Number(total).toFixed(2)),
+    }))
+  }, [summary, dateLocale])
 
-  // Spending (debits) by category, in the group's currency.
-  const categoryBreakdown = useMemo(
-    () =>
-      (summary?.by_category ?? []).map((c) => ({
-        id: c.category_id ?? 'uncategorized',
-        name: c.name ?? t('splitGroups.uncategorized'),
-        color: c.color ?? '#6B7280',
-        total: Number(c.total),
-      })),
-    [summary, t],
-  )
+  // Shape the server's per-category totals for the stacked bar.
+  const categoryBreakdown = useMemo(() => {
+    if (!summary) return [] as { id: string; name: string; color: string; total: number }[]
+    return summary.categories.map((c) => ({
+      id: c.category_id ?? 'uncategorized',
+      name: c.name ?? t('splitGroups.uncategorized'),
+      color: c.color ?? '#6B7280',
+      total: Number(c.total),
+    }))
+  }, [summary, t])
 
   const categoryBreakdownTotal = useMemo(
     () => categoryBreakdown.reduce((s, c) => s + c.total, 0),
@@ -536,7 +558,7 @@ export default function GroupDetailPage() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
         <KpiCard
           label={t('splitGroups.kpiTotalMoved')}
-          value={formatCurrency(totalMoved, groupCurrency, locale)}
+          value={summaryReady ? formatCurrency(totalMoved, groupCurrency, locale) : '—'}
           icon={Wallet}
         />
         <KpiCard
@@ -561,7 +583,7 @@ export default function GroupDetailPage() {
       )}
 
       {/* Spending trend (compact) */}
-      {monthlyData.length > 1 && (
+      {summaryReady && monthlyData.length > 1 && (
         <SectionCard>
           <SectionHeader
             title={t('splitGroups.spendingTrend')}
@@ -595,7 +617,7 @@ export default function GroupDetailPage() {
 
       {/* Category distribution — single horizontal stacked bar split
           by category, with a legend showing absolute and % per slice. */}
-      {categoryBreakdownTotal > 0 && (
+      {summaryReady && categoryBreakdownTotal > 0 && (
         <SectionCard>
           <SectionHeader
             title={t('splitGroups.byCategory')}
@@ -663,19 +685,13 @@ export default function GroupDetailPage() {
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium">{member.name}</span>
-                    {/* "(you)" only marks the actual viewer. is_self
-                        identifies the group owner/payer; for non-owner
-                        viewers we show that as "(owner)" instead so
-                        the badge isn't misleading. */}
+                    {/* "(you)" marks the viewer; a linked viewer sees
+                        the owner's member as "(owner)". */}
                     {viewerMember?.id === member.id ? (
                       <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
                         {t('splitGroups.you')}
                       </span>
-                    ) : member.is_self && isOwner ? (
-                      <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                        {t('splitGroups.you')}
-                      </span>
-                    ) : member.is_self ? (
+                    ) : ownerMember?.id === member.id ? (
                       <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
                         {t('splitGroups.ownerBadge')}
                       </span>
@@ -708,13 +724,18 @@ export default function GroupDetailPage() {
         {balances && balances.lines.length > 0 ? (
           <ul className="divide-y divide-border">
             {balances.lines.map((line, idx) => {
-              // Lines are projected onto the viewer: `member_id` is the other
-              // person, positive means they owe the viewer.
-              const positive = Number(line.amount) > 0
+              // Each line is the viewer's balance with one other member:
+              // positive = they owe the viewer, negative = the viewer owes them.
+              // Owner-side lines (see ownerSideLines) are the owner's instead.
+              const positive = line.amount > 0
               const otherName = memberName_(line.member_id)
-              const label = positive
-                ? t('splitGroups.owesYou', { name: otherName })
-                : t('splitGroups.youOwe', { name: otherName })
+              const label = ownerSideLines
+                ? positive
+                  ? t('splitGroups.owesGroupOwner', { name: otherName })
+                  : t('splitGroups.groupOwnerOwes', { name: otherName })
+                : positive
+                  ? t('splitGroups.owesYou', { name: otherName })
+                  : t('splitGroups.youOwe', { name: otherName })
               return (
                 <li
                   key={`${line.member_id}-${line.currency}-${idx}`}
@@ -730,23 +751,29 @@ export default function GroupDetailPage() {
                       {formatCurrency(Math.abs(line.amount), line.currency, locale)}
                     </span>
                     {(() => {
-                      // The owner may record any settlement; a linked member
-                      // only a payment they make themselves (the API's rule).
-                      const viewerPays = !positive
-                      if (!canWrite || !balances.self_member_id) return null
-                      if (!isOwner && !viewerPays) return null
-                      const self = balances.self_member_id
+                      // Show "Acertar" if the viewer can act on this line:
+                      // - Owner can act on any line
+                      // - Linked member can only pay what they owe
+                      //   (negative amount = they owe that member)
+                      const canActLinked = !isOwner && !ownerSideLines && !positive
+                      if (!isOwner && !canActLinked) return null
+                      if (!canWrite) return null
                       return (
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() =>
-                            positive
-                              ? openSettleUp(line.member_id, self, Math.abs(Number(line.amount)), line.currency)
-                              : openSettleUp(self, line.member_id, Math.abs(Number(line.amount)), line.currency)
-                          }
+                          onClick={() => {
+                            if (!balances.self_member_id) return
+                            if (positive) {
+                              // Member owes the viewer → from = member, to = viewer
+                              openSettleUp(line.member_id, balances.self_member_id, Math.abs(line.amount), line.currency)
+                            } else {
+                              // Viewer owes the member → from = viewer, to = member
+                              openSettleUp(balances.self_member_id, line.member_id, Math.abs(line.amount), line.currency)
+                            }
+                          }}
                         >
-                          {viewerPays && !isOwner ? t('splitGroups.payNow') : t('splitGroups.settleUp')}
+                          {canActLinked ? t('splitGroups.payNow') : t('splitGroups.settleUp')}
                         </Button>
                       )
                     })()}
@@ -939,7 +966,7 @@ export default function GroupDetailPage() {
             <DialogTitle>{t('splitGroups.recordSettlement')}</DialogTitle>
           </DialogHeader>
           {(() => {
-            const myMemberId = viewerMember?.id ?? (isOwner ? ownerMember?.id : null)
+            const myMemberId = viewerMember?.id ?? null
             const viewerIsPayer = !!myMemberId && settleFrom === myMemberId
             return (
           <div className="space-y-4 min-w-0">

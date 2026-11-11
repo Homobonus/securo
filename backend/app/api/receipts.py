@@ -9,7 +9,7 @@ from decimal import Decimal
 from typing import Iterable, List, Literal, Optional, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import noload, selectinload
 
@@ -49,6 +49,7 @@ from app.schemas.receipt import (
     ShoppingProductUpdate,
 )
 from app.services import receipt_service as svc
+from app.services._query_filters import any_line_in
 from app.services import retail_connection_service as connections
 from app.services.module_service import ModuleId
 from app.services.receipt_scan_service import SCAN_SOURCE, forget_image
@@ -333,12 +334,19 @@ async def list_receipts(
     paid_with = [Transaction.workspace_id == ctx.workspace.id]
     if account_ids:
         paid_with.append(Transaction.account_id.in_(account_ids))
-    if category_ids and uncategorized:
-        paid_with.append(or_(Transaction.category_id.in_(category_ids), Transaction.category_id.is_(None)))
-    elif category_ids:
-        paid_with.append(Transaction.category_id.in_(category_ids))
-    elif uncategorized:
-        paid_with.append(Transaction.category_id.is_(None))
+    # A transaction split across categories matches through its parts, and
+    # is never uncategorised: the same rules as the transaction list.
+    category_rules = []
+    if category_ids:
+        category_rules.append(
+            or_(Transaction.category_id.in_(category_ids), any_line_in(category_ids))
+        )
+    if uncategorized:
+        category_rules.append(
+            and_(Transaction.category_id.is_(None), Transaction.has_category_lines.is_(False))
+        )
+    if category_rules:
+        paid_with.append(or_(*category_rules))
     if payee_id:
         paid_with.append(Transaction.payee_id == payee_id)
     if group_id:

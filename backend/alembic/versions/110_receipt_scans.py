@@ -2,21 +2,25 @@
 
 One new table; no existing row changes.
 
-Revision ID: 100
-Revises: 099
+Revision ID: 110
+Revises: 109
+
+First shipped as 100; see 109_receipts for the renumbering.
 """
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision = "100"
-down_revision = "099"
+revision = "110"
+down_revision = "109"
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
+    if sa.inspect(op.get_bind()).has_table("receipt_scans"):
+        return  # created under this fork's old number (100)
     op.create_table(
         "receipt_scans",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
