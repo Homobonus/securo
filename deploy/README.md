@@ -21,10 +21,8 @@ z rekordem A/AAAA wskazującym na serwer, otwarte porty 80 i 443.
 
 1. **Włącz Actions w forku.** W repozytorium `Homobonus/securo` otwórz zakładkę
    **Actions** i kliknij *I understand my workflows, go ahead and enable them*.
-2. **Wyłącz workflow autorów, które w forku nie mają sensu.** W zakładce Actions
-   wybierz każdy z nich, a potem **⋯ → Disable workflow**:
-   *Downloads badge*, *Label guard*, *PR labels*, *Prepare release*,
-   *Build and Push Docker Images*. Zostaw **CI** (testy) i **Fork images**.
+2. **Workflow.** Fork ma tylko dwa: **CI** (testy) i **Fork images** (obrazy
+   na serwer). Workflow autorów (licznik pobrań, etykiety PR, wydania) są usunięte.
 3. **Serwer ARM** (Raspberry Pi, Ampere): w *Settings → Secrets and variables →
    Actions → Variables* dodaj zmienną `IMAGE_PLATFORMS` = `linux/amd64,linux/arm64`.
    Dla zwykłego serwera x86 nic nie ustawiaj.
