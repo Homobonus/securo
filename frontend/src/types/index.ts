@@ -1339,6 +1339,38 @@ export interface Attachment {
   created_at: string
 }
 
+/** Who spent what: income and expenses per person, by whose account paid. */
+export interface PeopleReportPerson {
+  user_id: string
+  name: string
+  is_you: boolean
+  account_ids: string[]
+}
+
+export interface PeopleReportMonth {
+  month: string
+  user_id: string
+  income: string
+  expenses: string
+}
+
+export interface PeopleReportCategory {
+  category_id: string | null
+  name: string | null
+  color: string | null
+  /** By user id; a person who spent nothing in the category is absent. */
+  amounts: Record<string, string>
+  total: string
+}
+
+export interface PeopleReport {
+  currency: string
+  month: string
+  people: PeopleReportPerson[]
+  months: PeopleReportMonth[]
+  categories: PeopleReportCategory[]
+}
+
 export interface ReportResponse {
   summary: ReportSummary
   trend: ReportDataPoint[]

@@ -2327,7 +2327,24 @@
     "range30d": "30D",
     "customRange": "Zakres niestandardowy",
     "pickCustomRange": "Wybierz datę początkową i końcową",
-    "loadError": "Nie udało się załadować raportu"
+    "loadError": "Nie udało się załadować raportu",
+    "people": "Osoby",
+    "peopleReport": {
+      "hint": "Ile w danym miesiącu wydała każda osoba, liczone według tego, z czyjego konta poszły pieniądze. Przelewy między kontami, także między Waszymi, się nie liczą.",
+      "you": "Ty",
+      "total": "Razem",
+      "income": "Przychody",
+      "balance": "Bilans",
+      "vsPrevious": "{{change}} vs poprzedni miesiąc",
+      "noComparison": "Brak wydatków miesiąc wcześniej",
+      "trendTitle": "Wydatki, ostatnie {{count}} mies.",
+      "categoriesTitle": "Według kategorii, {{month}}",
+      "category": "Kategoria",
+      "uncategorized": "Bez kategorii",
+      "noSpending": "Brak wydatków w tym miesiącu.",
+      "previousMonth": "Poprzedni miesiąc",
+      "nextMonth": "Następny miesiąc"
+    }
   },
   "payees": {
     "noPayeeFound": "Nie znaleziono odbiorcy.",

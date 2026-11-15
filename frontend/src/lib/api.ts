@@ -128,6 +128,7 @@ import type {
   RetailSyncResult,
   ShoppingProduct,
   ShoppingProductDetail,
+  PeopleReport,
 } from '@/types'
 
 const api = axios.create({
@@ -1846,6 +1847,10 @@ export const reports = {
       },
       ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}),
     })
+    return data
+  },
+  people: async (month: string, months = 6): Promise<PeopleReport> => {
+    const { data } = await api.get('/reports/people', { params: { month, months } })
     return data
   },
   cashFlow: async (months = 6, interval = 'daily', baseline = false, accountIds?: string[]): Promise<ReportResponse> => {

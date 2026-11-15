@@ -2286,7 +2286,24 @@
     "range30d": "30Η",
     "customRange": "Προσαρμοσμένο εύρος",
     "pickCustomRange": "Επιλέξτε ημερομηνία έναρξης και λήξης",
-    "loadError": "Αποτυχία φόρτωσης αναφοράς"
+    "loadError": "Αποτυχία φόρτωσης αναφοράς",
+    "people": "People",
+    "peopleReport": {
+      "hint": "What each person spent in the month, counted by whose account paid. Transfers between accounts, including between your accounts, don't count.",
+      "you": "you",
+      "total": "Together",
+      "income": "Income",
+      "balance": "Balance",
+      "vsPrevious": "{{change}} vs previous month",
+      "noComparison": "Nothing the month before",
+      "trendTitle": "Spending, last {{count}} months",
+      "categoriesTitle": "By category, {{month}}",
+      "category": "Category",
+      "uncategorized": "Uncategorized",
+      "noSpending": "No spending this month.",
+      "previousMonth": "Previous month",
+      "nextMonth": "Next month"
+    }
   },
   "fiscal": {
     "kind": {

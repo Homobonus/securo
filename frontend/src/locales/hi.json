@@ -2230,7 +2230,24 @@
     "range30d": "30D",
     "customRange": "कस्टम सीमा",
     "pickCustomRange": "प्रारंभ और समाप्ति तिथि चुनें",
-    "loadError": "रिपोर्ट लोड करने में विफल"
+    "loadError": "रिपोर्ट लोड करने में विफल",
+    "people": "People",
+    "peopleReport": {
+      "hint": "What each person spent in the month, counted by whose account paid. Transfers between accounts, including between your accounts, don't count.",
+      "you": "you",
+      "total": "Together",
+      "income": "Income",
+      "balance": "Balance",
+      "vsPrevious": "{{change}} vs previous month",
+      "noComparison": "Nothing the month before",
+      "trendTitle": "Spending, last {{count}} months",
+      "categoriesTitle": "By category, {{month}}",
+      "category": "Category",
+      "uncategorized": "Uncategorized",
+      "noSpending": "No spending this month.",
+      "previousMonth": "Previous month",
+      "nextMonth": "Next month"
+    }
   },
   "payees": {
     "noPayeeFound": "कोई प्राप्तकर्ता नहीं मिला।",

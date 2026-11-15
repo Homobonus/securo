@@ -8,8 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.app_clock import app_today
 from app.core.database import get_async_session
 from app.core.workspace_context import WorkspaceContext, current_workspace
-from app.schemas.report import ReportDataRange, ReportResponse
-from app.services import report_service
+from app.schemas.report import PeopleReport, ReportDataRange, ReportResponse
+from app.services import people_report_service, report_service
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -179,4 +179,20 @@ async def get_cash_flow(
     return await report_service.get_cash_flow_report(
         session, ctx.workspace.id, ctx.user_id, months, interval, ctx.user.primary_currency,
         baseline=baseline, account_ids=account_ids,
+    )
+
+
+@router.get("/people", response_model=PeopleReport)
+async def get_people_report(
+    month: Optional[str] = Query(
+        None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$", description="YYYY-MM; the current month by default"
+    ),
+    months: int = Query(6, ge=1, le=24, description="How many months the trend covers, ending with `month`"),
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Who spent what: income and expenses per person, by whose account paid."""
+    selected = date.fromisoformat(f"{month}-01") if month else app_today()
+    return await people_report_service.people_report(
+        session, ctx.workspace.id, ctx.user_id, ctx.user.primary_currency, selected, months
     )

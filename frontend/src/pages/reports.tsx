@@ -29,6 +29,7 @@ import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover
 import { DateRangePicker } from '@/components/ui/date-range-picker'
 import { PageHeader } from '@/components/page-header'
 import { CashflowSankey } from '@/components/reports/CashflowSankey'
+import { PeopleReportView } from '@/components/reports/people-report'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
@@ -190,6 +191,12 @@ const REPORT_TABS: ReportTab[] = [
     rangeOptions: MONEY_MAP_RANGE_OPTIONS, intervalOptions: HISTORICAL_INTERVAL_OPTIONS,
     supportsCustomRange: true, fallbackRangeKey: '3m', fallbackInterval: 'monthly',
   },
+  // Picks its own month; the range and interval controls are hidden on it.
+  {
+    key: 'people', labelKey: 'reports.people', enabled: true,
+    rangeOptions: HISTORICAL_RANGE_OPTIONS, intervalOptions: HISTORICAL_INTERVAL_OPTIONS,
+    supportsCustomRange: false, fallbackRangeKey: '6m', fallbackInterval: 'monthly',
+  },
 ]
 
 /** The range last used on `tab`, if it is still one the tab offers. */
@@ -271,6 +278,7 @@ export default function ReportsPage() {
   // The Money Map (Sankey) tab is driven by the same income/expenses
   // composition, aggregated over the selected historical range.
   const isMoneyMap = activeTab === 'money_map'
+  const isPeople = activeTab === 'people'
   const rangeOptions = currentTab.rangeOptions
   // Cash flow's forecast presets don't make sense with a past-only calendar
   // range, so custom is only offered for the historical tabs (Net Worth,
@@ -405,7 +413,7 @@ export default function ReportsPage() {
           ? reports.incomeExpenses(months, interval, acctIds, period, days, apiStart, apiEnd)
           : reports.netWorth(months, interval, acctIds, walletIds, period, apiStart, apiEnd),
     // Only request a custom report with both committed endpoints.
-    enabled: currentTab.enabled && !(noAccounts && activeTab !== 'net_worth') && (!isCustomRange || hasCustomRange),
+    enabled: currentTab.enabled && !isPeople && !(noAccounts && activeTab !== 'net_worth') && (!isCustomRange || hasCustomRange),
   })
 
   const summary = data?.summary
@@ -696,6 +704,7 @@ export default function ReportsPage() {
         section={t('reports.section')}
         title={t(currentTab.labelKey)}
         action={
+          isPeople ? undefined :
           <div className="flex flex-wrap items-center gap-2">
             {isCashFlow && (
               <div
@@ -886,6 +895,7 @@ export default function ReportsPage() {
         ))}
       </div>
 
+      {isPeople ? <PeopleReportView /> : (<>
       {isError && (
         <div className="flex items-center justify-between gap-3 bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 rounded-lg px-4 py-2.5 mb-5">
           <div className="flex items-center gap-2.5 min-w-0">
@@ -1893,6 +1903,7 @@ export default function ReportsPage() {
       )}
       </>
       )}
+      </>)}
     </div>
   )
 }

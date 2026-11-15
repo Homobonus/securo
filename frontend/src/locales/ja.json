@@ -2230,7 +2230,24 @@
     "range30d": "30日",
     "customRange": "期間を指定",
     "pickCustomRange": "開始日と終了日を選択",
-    "loadError": "レポートの読み込みに失敗しました"
+    "loadError": "レポートの読み込みに失敗しました",
+    "people": "People",
+    "peopleReport": {
+      "hint": "What each person spent in the month, counted by whose account paid. Transfers between accounts, including between your accounts, don't count.",
+      "you": "you",
+      "total": "Together",
+      "income": "Income",
+      "balance": "Balance",
+      "vsPrevious": "{{change}} vs previous month",
+      "noComparison": "Nothing the month before",
+      "trendTitle": "Spending, last {{count}} months",
+      "categoriesTitle": "By category, {{month}}",
+      "category": "Category",
+      "uncategorized": "Uncategorized",
+      "noSpending": "No spending this month.",
+      "previousMonth": "Previous month",
+      "nextMonth": "Next month"
+    }
   },
   "payees": {
     "noPayeeFound": "取引相手が見つかりません。",

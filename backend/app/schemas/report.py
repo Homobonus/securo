@@ -1,3 +1,7 @@
+import uuid
+from decimal import Decimal
+from typing import Optional
+
 from pydantic import BaseModel
 
 
@@ -70,3 +74,44 @@ class ReportResponse(BaseModel):
     meta: ReportMeta
     composition: list[ReportCompositionItem] = []
     category_trend: list[CategoryTrendItem] = []
+
+
+# ---------------------------------------------------------------------------
+# Who spent what (people report)
+# ---------------------------------------------------------------------------
+class PeopleReportPerson(BaseModel):
+    user_id: uuid.UUID
+    name: str
+    #: The person looking at the report.
+    is_you: bool = False
+    #: Their accounts in this workspace, to open their transactions.
+    account_ids: list[uuid.UUID] = []
+
+
+class PeopleReportMonth(BaseModel):
+    month: str  # YYYY-MM
+    user_id: uuid.UUID
+    income: Decimal
+    expenses: Decimal
+
+
+class PeopleReportCategory(BaseModel):
+    #: None for expenses without a category.
+    category_id: Optional[uuid.UUID] = None
+    name: Optional[str] = None
+    color: Optional[str] = None
+    #: Spent in the category, by user id; people who spent nothing are absent.
+    amounts: dict[str, Decimal] = {}
+    total: Decimal
+
+
+class PeopleReport(BaseModel):
+    """A workspace's income and expenses per person, by whose account paid."""
+
+    currency: str
+    month: str  # the month the categories describe, YYYY-MM
+    people: list[PeopleReportPerson]
+    #: One row per month and person, oldest first, zeros included.
+    months: list[PeopleReportMonth]
+    #: The selected month's expenses by category, largest first.
+    categories: list[PeopleReportCategory]
