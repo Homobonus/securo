@@ -1,4 +1,5 @@
 import axios from 'axios'
+import type { LayoutItem } from '@/lib/library'
 import { normalizeBudgetComparisonRows } from '@/lib/budget-settings-utils'
 import type { AxiosResponse } from 'axios'
 import { markDataChanged } from '@/lib/data-changed'
@@ -65,6 +66,7 @@ import type {
   RulePack,
   RulePackRemoval,
   InstalledPlugin,
+  PluginConnection,
   PluginAction,
   PluginCatalogEntry,
   PluginPlan,
@@ -98,6 +100,7 @@ import type {
   BalanceHistory,
   PaginatedTransactions,
   ReportResponse,
+  CategoryStatementResponse,
   Group,
   GroupKind,
   GroupMember,
@@ -148,7 +151,8 @@ api.interceptors.request.use((config) => {
     config.headers.Authorization = `Bearer ${token}`
   }
   const workspaceId = localStorage.getItem(WORKSPACE_STORAGE_KEY)
-  if (workspaceId) {
+  // A request that names its workspace keeps it (a save queued before a switch).
+  if (workspaceId && !config.headers['X-Workspace-Id']) {
     config.headers['X-Workspace-Id'] = workspaceId
   }
   return config
@@ -623,6 +627,7 @@ export const transactions = {
     category_ids?: string[]
     payee_id?: string
     uncategorized?: boolean
+    shared_as_uncategorized?: boolean
     type?: string
     status?: string
     from?: string
@@ -655,6 +660,7 @@ export const transactions = {
     month?: string
     account_id?: string
     account_ids?: string[]
+    date_basis?: 'reporting' | 'bank'
   }): Promise<TransactionCalendarResponse> => {
     const { data } = await api.get('/transactions/calendar', {
       params,
@@ -1858,6 +1864,12 @@ export const reports = {
     const { data } = await api.get('/reports/cash-flow', { params: { months, interval, baseline, ...(extra.params ?? {}) }, ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}) })
     return data
   },
+  // `month` is "YYYY-MM"; the response covers it and the `months - 1` before it.
+  categoryStatement: async (month: string, months: number, accountIds?: string[]): Promise<CategoryStatementResponse> => {
+    const extra = acctIdsParam(accountIds)
+    const { data } = await api.get('/reports/category-statement', { params: { month, months, ...(extra.params ?? {}) }, ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}) })
+    return data
+  },
   // Oldest and newest transaction dates in the workspace (opening
   // balances excluded). The reports page builds its year picker from
   // these bounds (issue #765).
@@ -1881,7 +1893,7 @@ export const fxRates = {
     const { data } = await api.post('/fx-rates/refresh')
     return data
   },
-  status: async (): Promise<{ last_sync_date: string | null; total_rates: number }> => {
+  status: async (): Promise<{ last_sync_date: string | null; total_rates: number; fx_sync_mode: string; configured: boolean }> => {
     const { data } = await api.get('/fx-rates/status')
     return data
   },
@@ -1932,6 +1944,20 @@ export const backup = {
 }
 
 // Admin
+export interface ProviderSettingStatus {
+  name: string
+  configured: boolean
+  can_store_secrets: boolean
+  fields: Record<string, {
+    configured: boolean
+    source: 'app' | 'environment' | 'none'
+    invalid: boolean
+    environment_configured: boolean
+  }>
+  /** Callback URL to register with the provider, derived from the server URL. */
+  redirect_uri?: string | null
+}
+
 export interface TimezoneSetting {
   /** The timezone in use, after fallbacks. */
   timezone: string
@@ -1969,6 +1995,17 @@ export const admin = {
   deleteUser: async (id: string): Promise<void> => {
     await api.delete(`/admin/users/${id}`)
   },
+  providerSettings: async (): Promise<ProviderSettingStatus[]> => {
+    const { data } = await api.get('/admin/provider-settings')
+    return data
+  },
+  updateProviderSettings: async (
+    provider: string,
+    values: Record<string, string | boolean | null>,
+  ): Promise<ProviderSettingStatus> => {
+    const { data } = await api.patch(`/admin/provider-settings/${encodeURIComponent(provider)}`, { values })
+    return data
+  },
   getSetting: async (key: string): Promise<AppSetting> => {
     const { data } = await api.get(`/admin/settings/${key}`)
     return data
@@ -2003,6 +2040,32 @@ export const admin = {
   defaultColors: async (): Promise<{ light: string | null; dark: string | null }> => {
     const { data } = await api.get('/admin/default-colors')
     return data
+  },
+}
+
+// How someone arranged the dashboard and the reports in this workspace;
+// null is Securo's default arrangement.
+export interface UiLayouts {
+  dashboard: LayoutItem[] | null
+  reports: LayoutItem[] | null
+}
+
+function workspaceHeader(workspaceId?: string | null) {
+  return workspaceId ? { headers: { 'X-Workspace-Id': workspaceId } } : undefined
+}
+
+export const uiLayouts = {
+  get: async (workspaceId?: string | null): Promise<UiLayouts> => {
+    const { data } = await api.get('/ui/layouts', workspaceHeader(workspaceId))
+    return data
+  },
+  // `workspaceId` pins a read or a write to one workspace, whatever the active
+  // one is when it goes out (a queued save, another tab switching).
+  save: async (surface: 'dashboard' | 'reports', items: LayoutItem[], workspaceId?: string | null): Promise<void> => {
+    await api.put(`/ui/layouts/${surface}`, { items }, workspaceHeader(workspaceId))
+  },
+  reset: async (surface: 'dashboard' | 'reports', workspaceId?: string | null): Promise<void> => {
+    await api.delete(`/ui/layouts/${surface}`, workspaceHeader(workspaceId))
   },
 }
 
@@ -2048,7 +2111,7 @@ export const info = {
   },
 }
 
-// Data plugins -- only reachable when info.features.plugins === true.
+// Plugins -- only reachable when info.features.plugins === true.
 export const plugins = {
   /** Installed in this workspace; reads the database only, never the catalog. */
   installed: async (): Promise<InstalledPlugin[]> => {
@@ -2076,6 +2139,36 @@ export const plugins = {
       commit: plan.commit,
       token: plan.token,
     })
+    return data
+  },
+  /** Connections made through plugins with code in this workspace. */
+  connections: async (): Promise<PluginConnection[]> => {
+    const { data } = await api.get('/plugins/connections')
+    return data
+  },
+  /** Sign-in integrations answer with the link to send the browser to. */
+  connect: async (body: {
+    plugin_id: string
+    integration: string
+    name: string
+    values: Record<string, string>
+  }): Promise<{ connection: PluginConnection; authorize_url: string | null }> => {
+    const { data } = await api.post('/plugins/connections', body)
+    return data
+  },
+  authorize: async (connectionId: string): Promise<{ authorize_url: string; redirect_uri: string }> => {
+    const { data } = await api.post(`/plugins/connections/${connectionId}/authorize`)
+    return data
+  },
+  sync: async (connectionId: string): Promise<PluginConnection> => {
+    const { data } = await api.post(`/plugins/connections/${connectionId}/sync`)
+    return data
+  },
+  disconnect: async (connectionId: string): Promise<void> => {
+    await api.delete(`/plugins/connections/${connectionId}`)
+  },
+  oauthCallback: async (code: string, state: string): Promise<PluginConnection> => {
+    const { data } = await api.post('/plugins/oauth/callback', { code, state })
     return data
   },
 }

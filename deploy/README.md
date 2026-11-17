@@ -134,6 +134,19 @@ docker compose pull && docker compose up -d  # migracje bazy uruchamiają się s
 docker image prune -f
 ```
 
+**Od wersji opartej na Securo 0.19** migracje forka (paragony) mają własną
+gałąź w bazie, obok migracji autorów. Backend uruchamia więc
+`alembic upgrade heads` (liczba mnoga). Stary `docker-compose.yml` z
+`upgrade head` zatrzyma się z błędem „Multiple head revisions”, dlatego przy
+tej aktualizacji pobierz go jeszcze raz:
+
+```bash
+curl -fsSLo docker-compose.yml https://raw.githubusercontent.com/Homobonus/securo/main/deploy/docker-compose.yml
+```
+
+Przy pierwszym starcie backend sam przepisze wersję w bazie na nowy układ.
+Dane zostają.
+
 Powrót do wcześniejszej wersji: w `.env` ustaw `SECURO_TAG=sha-xxxxxxx` (tagi są
 w Packages na GitHubie) i wykonaj `docker compose up -d`. Uwaga: nowsza wersja
 mogła już zmienić schemat bazy. Wtedy przywróć też kopię bazy sprzed aktualizacji.

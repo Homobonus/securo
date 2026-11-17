@@ -39,29 +39,46 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-def _undo_fork_revision_numbers(connection: Connection) -> None:
-    """Move a database stamped with this fork's old migration numbers to 098.
+#: How this fork once numbered its migrations, before they got a branch of
+#: their own: (old stamp, upstream revision that ran, fork revision that ran,
+#: what upstream's own migration of the old number adds, as (table, column)).
+_FORK_OLD_STAMPS = {
+    "099": ("098", "f01", ("accounts", "loan_kind")),
+    "100": ("098", "f02", ("accounts", "loan_kind")),
+    "109": ("108", "f01", ("users", "theme")),
+    "110": ("108", "f02", ("users", "theme")),
+}
 
-    The fork shipped its receipts migrations as 099 and 100, numbers
-    upstream later used for 099_loan_terms and 100_registration_setting.
-    Such a database says 099/100 while upstream's two never ran, so alembic
-    would skip them. Their mark: the receipts table exists, the loan columns
-    of upstream's 099 do not. From 098, upstream's 099-108 run, then the
-    fork's renumbered 109/110 find their tables and leave them be.
+
+def _restamp_fork_branch(connection: Connection) -> None:
+    """Split a database stamped with this fork's old numbers into two heads.
+
+    The receipts migrations used to sit at the end of upstream's line, as
+    099/100 and later 109/110, numbers upstream then gave to migrations of
+    its own. Such a database holds one stamp, e.g. "110", while upstream's
+    110 never ran, so alembic would skip it. Its mark: the receipts table
+    is there and the column upstream's migration of that number adds is
+    not. It is restamped as the upstream revision that really ran plus the
+    fork's own head, and `upgrade heads` carries on from both.
     """
     inspector = sa.inspect(connection)
     if not inspector.has_table("alembic_version") or not inspector.has_table("receipts"):
         return
     current = connection.execute(sa.text("SELECT version_num FROM alembic_version")).scalars().all()
-    if current not in (["099"], ["100"]):
+    if len(current) != 1 or current[0] not in _FORK_OLD_STAMPS:
         return
-    if any(column["name"] == "loan_kind" for column in inspector.get_columns("accounts")):
-        return
-    connection.execute(sa.text("UPDATE alembic_version SET version_num = '098'"))
+    upstream, fork, (table, column) = _FORK_OLD_STAMPS[current[0]]
+    if any(c["name"] == column for c in inspector.get_columns(table)):
+        return  # upstream's own migration of that number ran: the stamp is upstream's
+    connection.execute(sa.text("DELETE FROM alembic_version"))
+    connection.execute(
+        sa.text("INSERT INTO alembic_version (version_num) VALUES (:upstream), (:fork)"),
+        {"upstream": upstream, "fork": fork},
+    )
 
 
 def do_run_migrations(connection: Connection) -> None:
-    _undo_fork_revision_numbers(connection)
+    _restamp_fork_branch(connection)
     # The check above began a transaction; alembic leaves one it did not
     # begin uncommitted, which would roll every migration back on close.
     connection.commit()

@@ -2,18 +2,18 @@
 
 One new table; no existing row changes.
 
-Revision ID: 110
-Revises: 109
+Revision ID: f02
+Revises: f01
 
-First shipped as 100; see 109_receipts for the renumbering.
+First shipped as 100, then 110; see f01_receipts.
 """
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision = "110"
-down_revision = "109"
+revision = "f02"
+down_revision = "f01"
 branch_labels = None
 depends_on = None
 

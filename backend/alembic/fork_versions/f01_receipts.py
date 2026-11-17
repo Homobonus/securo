@@ -10,22 +10,28 @@
 
 All new tables; no existing row changes.
 
-Revision ID: 109
-Revises: 108
+Revision ID: f01
+Revises: (none; the root of this fork's own branch)
 
-This fork first shipped it as 099, a number upstream later gave to
-099_loan_terms; alembic/env.py moves such a database back to 098 so
-upstream's 099-108 run, and this migration then finds its tables there.
+This fork's migrations live in `alembic/fork_versions` on a branch of
+their own (label `fork`), beside upstream's single line, so upstream's
+numbers never collide with them. `alembic upgrade heads` runs both.
+Before the branch they were numbered after upstream (099/100, then
+109/110); alembic/env.py restamps such a database once.
 """
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision = "109"
-down_revision = "108"
-branch_labels = None
-depends_on = None
+revision = "f01"
+down_revision = None
+branch_labels = ("fork",)
+# Its tables point at users, categories, transactions and workspaces, the
+# last of them created by 052. Not anything later: a database restamped from
+# the fork's old numbers (alembic/env.py) may stand at 098, and a dependency
+# at or above that would overlap with it.
+depends_on = "052"
 
 
 def upgrade() -> None:

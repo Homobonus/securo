@@ -1,6 +1,7 @@
 from celery import Celery
 
 from app.core.config import get_settings
+from app.core.feature_flags import feature_flag
 
 settings = get_settings()
 
@@ -67,6 +68,15 @@ celery_app.conf.beat_schedule = {
     },
 }
 
+if feature_flag("PLUGINS_ENABLED"):
+    # Only scheduled when plugins are on, so an instance without them runs
+    # nothing extra. Each connection keeps its own interval (at least 15
+    # minutes, from the plugin's manifest); this only checks which are due.
+    celery_app.conf.beat_schedule["sync-plugin-connections"] = {
+        "task": "app.tasks.plugin_tasks.sync_plugin_connections",
+        "schedule": 60 * 5,
+    }
+
 celery_app.conf.include = [
     "app.tasks.sync_tasks",
     "app.tasks.recurring_tasks",
@@ -74,6 +84,7 @@ celery_app.conf.include = [
     "app.tasks.asset_tasks",
     "app.tasks.fx_rate_tasks",
     "app.tasks.retail_tasks",
+    "app.tasks.plugin_tasks",
     # Optional agents module — registering the import is harmless when
     # AGENTS_ENABLED=false (the task just won't be dispatched).
     "app.agents.tasks.ingest",
